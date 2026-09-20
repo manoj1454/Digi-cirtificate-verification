@@ -229,7 +229,8 @@ export const QRCodeModal = ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
-              background: '#f1f5f9',
+              background: 'var(--surface-subtle)',
+              border: '1px solid var(--divider)',
               padding: '0.35rem 0.75rem',
               borderRadius: '4px',
               cursor: 'pointer',
@@ -237,13 +238,13 @@ export const QRCodeModal = ({
             onClick={handleCopyId}
             title="Click to copy Credential ID"
           >
-            <code style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.88rem' }}>
+            <code style={{ color: 'var(--text-primary)', fontWeight: 'bold', fontSize: '0.88rem', background: 'transparent', border: 'none', padding: 0 }}>
               {credentialId}
             </code>
             {copied ? (
               <CheckCircle2 size={14} className="text-success" />
             ) : (
-              <Copy size={14} style={{ color: '#64748b' }} />
+              <Copy size={14} style={{ color: 'var(--text-secondary)' }} />
             )}
           </div>
         </div>

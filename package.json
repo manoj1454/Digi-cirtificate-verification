@@ -13,6 +13,7 @@
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
     "build:frontend": "npm run build --workspace=frontend",
+    "test": "playwright test e2e/verify-phase2-login-experience.spec.js",
     "test:contracts": "npm run test --workspace=contracts",
     "contracts:node": "npm run node --workspace=contracts",
     "contracts:deploy": "npm run deploy --workspace=contracts",

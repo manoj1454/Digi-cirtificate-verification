@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import gsap from 'gsap';
+import Lenis from 'lenis';
 import { useAuth } from '../context/AuthContext';
 import {
   ShieldCheck,
@@ -12,7 +14,15 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
+  Shield,
+  Layers,
+  ChevronDown,
 } from 'lucide-react';
+import { XypherLiquidFallback } from '../components/XypherLiquidFallback';
+import { shouldUse3DHero } from '../lib/deviceDetection';
+
+// Code-split Three.js / React Three Fiber liquid scene so it only loads on this route
+const XypherLiquidScene = lazy(() => import('../components/XypherLiquidScene'));
 
 export const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -22,6 +32,7 @@ export const AuthPage = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authState, setAuthState] = useState('idle'); // 'idle' | 'authenticating' | 'verified' | 'error'
 
   // Extra profile fields for signup
   const [institutionName, setInstitutionName] = useState('');
@@ -29,16 +40,132 @@ export const AuthPage = () => {
   const [fullName, setFullName] = useState('');
   const [rollNumber, setRollNumber] = useState('');
 
+  // 3D capability detection
+  const [canRender3D, setCanRender3D] = useState(false);
+  const lenisRef = useRef(null);
+  const cardRef = useRef(null);
+
+  // Cinematic Entrance & Scroll State
+  const [entranceProgress, setEntranceProgress] = useState(0.0);
+  const [scrollProgress, setScrollProgress] = useState(0.0);
+
   const { signIn, signUp, user, role, getDashboardPath, loginAsDemoRole, isSupabaseConfigured } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (user && role) {
+    // Detect WebGL support and device power
+    const isCapable = shouldUse3DHero();
+    setCanRender3D(isCapable);
+
+    // Check reduced motion preference
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Cinematic Visual Sequence (GSAP)
+    // Empty warm space -> Faint lattice convergence -> Glass lens forms and thickens -> Specular sweep -> Settle
+    if (prefersReducedMotion) {
+      setEntranceProgress(1.0);
+    } else {
+      const entranceObj = { val: 0.0 };
+      gsap.to(entranceObj, {
+        val: 1.0,
+        duration: 3.2,
+        ease: 'power2.out',
+        onUpdate: () => setEntranceProgress(entranceObj.val),
+      });
+
+      // Animate typography with cinematic ease
+      gsap.fromTo(
+        '.xypher-wordmark-display',
+        { opacity: 0, y: 35, filter: 'blur(8px)' },
+        { opacity: 1, y: 0, filter: 'blur(0px)', duration: 1.8, delay: 0.6, ease: 'power3.out' }
+      );
+      gsap.fromTo(
+        '.xypher-hero-tagline-editorial',
+        { opacity: 0, y: 20 },
+        { opacity: 1, y: 0, duration: 1.4, delay: 1.0, ease: 'power2.out' }
+      );
+      gsap.fromTo(
+        '.xypher-hero-purpose, .xypher-hero-action-row, .xypher-pillars-minimal',
+        { opacity: 0, y: 15 },
+        { opacity: 1, y: 0, duration: 1.4, delay: 1.3, ease: 'power2.out', stagger: 0.15 }
+      );
+    }
+
+    // Initialize Lenis smooth scroll for the landing page
+    const lenis = new Lenis({
+      duration: 1.3,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+    });
+    lenisRef.current = lenis;
+
+    // Track scroll progress to drive uScrollProgress shader uniform and hero exit
+    lenis.on('scroll', (e) => {
+      const scrollY = e.scroll || window.scrollY || 0;
+      const heroHeight = window.innerHeight || 800;
+      const progress = Math.min(Math.max(scrollY / (heroHeight * 0.75), 0), 1);
+      setScrollProgress(progress);
+    });
+
+    let rafId;
+    function raf(time) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    }
+    rafId = requestAnimationFrame(raf);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, []);
+
+  const handleScrollToAuth = () => {
+    const el = document.getElementById('auth-section');
+    if (el) {
+      if (lenisRef.current) {
+        lenisRef.current.scrollTo(el, { offset: 0, duration: 1.2 });
+      } else {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  };
+
+  // Only auto-redirect if already authenticated and not currently transitioning
+  useEffect(() => {
+    if (user && role && authState !== 'authenticating' && authState !== 'verified') {
       const target = getDashboardPath(role);
       navigate(target, { replace: true });
     }
-  }, [user, role, navigate, getDashboardPath]);
+  }, [user, role, navigate, getDashboardPath, authState]);
+
+  // Optical physical card cursor light & specular tracking
+  const handleCardMouseMove = (e) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    cardRef.current.style.setProperty('--card-mouse-x', `${x.toFixed(1)}%`);
+    cardRef.current.style.setProperty('--card-mouse-y', `${y.toFixed(1)}%`);
+
+    // Extremely subtle physical tilt (restrained to max 2.5 degrees)
+    const tiltX = (((e.clientY - rect.top) / rect.height) - 0.5) * -3;
+    const tiltY = (((e.clientX - rect.left) / rect.width) - 0.5) * 3;
+    cardRef.current.style.setProperty('--card-tilt-x', `${tiltX.toFixed(2)}deg`);
+    cardRef.current.style.setProperty('--card-tilt-y', `${tiltY.toFixed(2)}deg`);
+  };
+
+  const handleCardMouseLeave = () => {
+    if (!cardRef.current) return;
+    cardRef.current.style.setProperty('--card-mouse-x', '50%');
+    cardRef.current.style.setProperty('--card-mouse-y', '25%');
+    cardRef.current.style.setProperty('--card-tilt-x', '0deg');
+    cardRef.current.style.setProperty('--card-tilt-y', '0deg');
+  };
 
   const rolesList = [
     {
@@ -76,6 +203,11 @@ export const AuthPage = () => {
     setErrorMsg('');
     setSuccessMsg('');
     setIsSubmitting(true);
+    setAuthState('authenticating');
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     try {
       if (isSignUp) {
@@ -89,94 +221,190 @@ export const AuthPage = () => {
         }
 
         await signUp(email, password, selectedRole, extraData);
+        setAuthState('verified');
         setSuccessMsg(
           'Signup successful! Account created and role mapped in users table.'
         );
-        navigate(getDashboardPath(selectedRole));
+
+        if (prefersReducedMotion) {
+          navigate(getDashboardPath(selectedRole));
+        } else {
+          await new Promise((r) => setTimeout(r, 650));
+          navigate(getDashboardPath(selectedRole));
+        }
       } else {
         await signIn(email, password);
-        // Navigation will trigger automatically via Auth state change or role resolution
+        setAuthState('verified');
+
+        if (prefersReducedMotion) {
+          navigate(getDashboardPath(role || selectedRole));
+        } else {
+          await new Promise((r) => setTimeout(r, 650));
+          navigate(getDashboardPath(role || selectedRole));
+        }
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Authentication failed. Please check your credentials.');
+      console.error('Auth error:', err);
+      setAuthState('error');
+      setErrorMsg(err.message || 'Authentication failed.');
+      // Reset error shake state after 600ms so subsequent actions can shake cleanly
+      setTimeout(() => {
+        setAuthState('idle');
+      }, 600);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDemoLogin = (targetRole) => {
-    loginAsDemoRole(targetRole);
-    navigate(`/${targetRole}`);
+  const handleDemoLogin = async (roleId) => {
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    setAuthState('authenticating');
+    setErrorMsg('');
+    try {
+      loginAsDemoRole(roleId);
+      setAuthState('verified');
+
+      if (prefersReducedMotion) {
+        navigate(getDashboardPath(roleId));
+      } else {
+        await new Promise((r) => setTimeout(r, 650));
+        navigate(getDashboardPath(roleId));
+      }
+    } catch (err) {
+      setAuthState('error');
+      setErrorMsg(err.message || 'Demo authentication failed.');
+      setTimeout(() => {
+        setAuthState('idle');
+      }, 600);
+    }
   };
 
   return (
-    <div className="landing-page-container">
+    <div className="xypher-landing-wrap">
       {/* =========================================================================
-          Hero / About Section
+          Continuous Ambient 3D Crystal Lens & Atmospheric Layer
+          Continues from Hero down into Login Environment
           ========================================================================= */}
-      <section className="landing-hero-section">
-        <div className="landing-hero-inner">
-          <div className="landing-hero-brand">
-            <h1 className="landing-hero-title">XYPHER</h1>
-            <p className="landing-hero-tagline">Verify. Trust. Authenticate.</p>
-          </div>
+      <div className="xypher-ambient-scene-layer" aria-hidden="true">
+        {canRender3D ? (
+          <Suspense fallback={<XypherLiquidFallback />}>
+            <XypherLiquidScene
+              entranceProgress={entranceProgress}
+              scrollProgress={scrollProgress}
+            />
+          </Suspense>
+        ) : (
+          <XypherLiquidFallback />
+        )}
+      </div>
 
-          <p className="landing-hero-description">
-            Every year, thousands of fraudulent academic and professional credentials pass unnoticed through conventional hiring and compliance channels. XYPHER establishes an immutable, dual-layer standard of trust: cryptographically sealing each credential on-chain while continuously interrogating the real-time accreditation standing of the issuing institution. Because a tamper-proof certificate issued by an unaccredited or revoked entity remains inherently invalid, XYPHER verifies not just the certificate — but the institution behind it.
-          </p>
-
-          <div className="landing-pillars-row">
-            <div className="landing-pillar">
-              <span className="landing-pillar-label">Tamper-Proof</span>
-              <span className="landing-pillar-dash">—</span>
-              <span className="landing-pillar-text">Every credential is cryptographically sealed and cannot be silently altered.</span>
-            </div>
-
-            <div className="landing-pillar-divider" />
-
-            <div className="landing-pillar">
-              <span className="landing-pillar-label">Issuer Accreditation</span>
-              <span className="landing-pillar-dash">—</span>
-              <span className="landing-pillar-text">We verify the institution&apos;s standing continuously, not just at the moment of issuance.</span>
-            </div>
-
-            <div className="landing-pillar-divider" />
-
-            <div className="landing-pillar">
-              <span className="landing-pillar-label">Instant &amp; Free</span>
-              <span className="landing-pillar-dash">—</span>
-              <span className="landing-pillar-text">Verification is a read-only check, with no cost and no waiting.</span>
+      {/* =========================================================================
+          1. Full-Screen Immersive WebGL Hero Scene (LOCKED PHASE 1.5 ART DIRECTION)
+          ========================================================================= */}
+      <section className="xypher-hero-fullscreen" id="hero-fullscreen">
+        {/* Editorial Typography & Interactive Controls Layer */}
+        <div
+          className="xypher-hero-editorial-overlay"
+          style={{
+            opacity: Math.max(1 - scrollProgress * 1.5, 0),
+            transform: `translateY(${-scrollProgress * 50}px)`,
+          }}
+        >
+          {/* Top: Protocol Subtitle */}
+          <div className="xypher-editorial-top">
+            <div className="xypher-editorial-tag">
+              <span>CRYPTOGRAPHIC PROTOCOL // 2026</span>
             </div>
           </div>
 
-          <div className="landing-hero-actions">
-            <button
-              type="button"
-              onClick={() => {
-                document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' });
-              }}
-              className="btn-primary landing-hero-cta"
-            >
-              <span>Sign In</span>
-              <ArrowRight size={16} />
-            </button>
+          {/* Asymmetric Editorial Hero Content */}
+          <div className="xypher-editorial-asym-container">
+            <div className="xypher-editorial-col">
+              <h1 className="xypher-wordmark-display">XYPHER</h1>
+              <p className="xypher-hero-tagline-editorial">Verify What Matters.</p>
+              <p className="xypher-hero-purpose">
+                A digital certificate becoming a physical object. Immutable cryptographic verification suspended in a translucent optical lens.
+              </p>
+
+              <div className="xypher-hero-action-row">
+                <button
+                  type="button"
+                  onClick={handleScrollToAuth}
+                  className="xypher-scroll-prompt btn-tactile"
+                  id="hero-scroll-btn"
+                  aria-label="Scroll to authentication portal"
+                >
+                  <span>Enter Verification Portal</span>
+                  <ChevronDown size={14} className="scroll-prompt-icon" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom: Subtle Trust Metadata */}
+          <div className="xypher-editorial-bottom">
+            <div className="xypher-pillars-minimal">
+              <div className="xypher-pillar-item">
+                <span className="xypher-pillar-title">Tamper-Proof Ledger</span>
+                <span className="xypher-pillar-desc">Cryptographically anchored on-chain</span>
+              </div>
+              <div className="xypher-pillar-rule" />
+              <div className="xypher-pillar-item">
+                <span className="xypher-pillar-title">Live Accreditation</span>
+                <span className="xypher-pillar-desc">Continuous institutional audit</span>
+              </div>
+              <div className="xypher-pillar-rule" />
+              <div className="xypher-pillar-item">
+                <span className="xypher-pillar-title">Zero-Cost Verification</span>
+                <span className="xypher-pillar-desc">Instant public cryptographic proof</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* =========================================================================
-          Auth Section (Restrained Frosted Glass Card)
+          2. Physical Optical Glass Authentication Section (PHASE 2)
           ========================================================================= */}
       <section id="auth-section" className="landing-auth-section">
         <div className="auth-page-layout">
           <div className="auth-form-column">
-            <div className="auth-card frosted-card">
+            <div
+              ref={cardRef}
+              className={`auth-card glass-panel ${
+                authState === 'error' ? 'auth-card-shake' : ''
+              } ${authState === 'verified' ? 'auth-card-verifying' : ''}`}
+              id="auth-glass-panel"
+              onMouseMove={handleCardMouseMove}
+              onMouseLeave={handleCardMouseLeave}
+            >
+              {/* Authentication Success Resolve Overlay */}
+              {authState === 'verified' && (
+                <div className="auth-verification-resolve" aria-live="assertive">
+                  <div className="auth-verification-content">
+                    <div className="auth-verification-seal">
+                      <ShieldCheck size={32} className="seal-icon" />
+                    </div>
+                    <h3 className="auth-verification-title">Identity Verified</h3>
+                    <div className="auth-verification-meta">
+                      <span className="mono-badge">XYPHER // CRYPTOGRAPHIC PROOF RESOLVED</span>
+                    </div>
+                    <div className="auth-verification-bar">
+                      <div className="auth-verification-progress" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Header */}
               <div className="auth-header">
                 <div className="auth-logo-badge">
-                  <ShieldCheck size={28} className="auth-logo-icon" />
+                  <ShieldCheck size={26} className="auth-logo-icon" />
                 </div>
-                <h1 className="auth-title">XYPHER</h1>
+                <h2 className="auth-title">XYPHER</h2>
                 <p className="auth-wordmark-tagline">Verify. Trust. Authenticate.</p>
                 <p className="auth-sub">
                   {isSignUp
@@ -185,225 +413,323 @@ export const AuthPage = () => {
                 </p>
               </div>
 
-        {/* Status Notice if Supabase not configured */}
-        {!isSupabaseConfigured && (
-          <div className="setup-notice-box">
-            <div className="setup-notice-header">
-              <Sparkles size={16} className="text-warning" />
-              <span>Instant Role Preview Available</span>
-            </div>
-            <p className="setup-notice-text">
-              Supabase keys in <code>frontend/.env</code> are currently in standby/placeholder mode. You can test live database operations once configured, or click any role below for instant preview:
-            </p>
-            <div className="demo-pills-row">
-              {rolesList.map(r => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => handleDemoLogin(r.id)}
-                  className={`demo-pill ${r.colorClass}`}
-                >
-                  <r.icon size={13} />
-                  <span>{r.title}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tab Toggle */}
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={`auth-tab ${!isSignUp ? 'active' : ''}`}
-            onClick={() => {
-              setIsSignUp(false);
-              setErrorMsg('');
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={`auth-tab ${isSignUp ? 'active' : ''}`}
-            onClick={() => {
-              setIsSignUp(true);
-              setErrorMsg('');
-            }}
-          >
-            Create Account
-          </button>
-        </div>
-
-        {/* Notifications */}
-        {errorMsg && (
-          <div className="alert-box alert-error">
-            <AlertCircle size={18} />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-        {successMsg && (
-          <div className="alert-box alert-success">
-            <CheckCircle2 size={18} />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="auth-form">
-          {/* Role selector (shown on Signup) */}
-          {isSignUp && (
-            <div className="role-selector-section">
-              <label className="form-label">
-                Select Your Role <span className="text-required">*</span>
-              </label>
-              <div className="role-cards-grid">
-                {rolesList.map((r) => {
-                  const Icon = r.icon;
-                  const isSelected = selectedRole === r.id;
-                  return (
-                    <div
+              {/* Instant Role Preview / Demo Authentication */}
+              <div className="setup-notice-box">
+                <div className="setup-notice-header">
+                  <Sparkles size={14} className="notice-icon" />
+                  <span>Instant Role Preview Available</span>
+                </div>
+                <p className="setup-notice-text">
+                  Instant preview for evaluation and testing. Select any role below for one-click verification:
+                </p>
+                <div className="demo-pills-row">
+                  {rolesList.map((r) => (
+                    <button
                       key={r.id}
-                      onClick={() => setSelectedRole(r.id)}
-                      className={`role-choice-card ${isSelected ? 'selected' : ''} ${r.colorClass}`}
+                      type="button"
+                      onClick={() => handleDemoLogin(r.id)}
+                      className={`demo-pill ${r.colorClass}`}
+                      id={`demo-pill-${r.id}`}
+                      disabled={isSubmitting || authState === 'verified'}
                     >
-                      <Icon size={20} className="role-choice-icon" />
-                      <div className="role-choice-title">{r.title}</div>
-                      <div className="role-choice-sub">{r.subtitle}</div>
+                      <r.icon size={13} />
+                      <span>{r.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Segmented Optical Tab Toggle */}
+              <div className="auth-tabs-segmented" role="tablist" aria-label="Authentication Mode">
+                <div
+                  className="auth-tab-slider"
+                  style={{
+                    transform: isSignUp ? 'translateX(100%)' : 'translateX(0%)',
+                  }}
+                  aria-hidden="true"
+                />
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-signin"
+                  aria-selected={!isSignUp}
+                  className={`auth-segmented-btn ${!isSignUp ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsSignUp(false);
+                    setErrorMsg('');
+                  }}
+                  disabled={isSubmitting || authState === 'verified'}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="tab-signup"
+                  aria-selected={isSignUp}
+                  className={`auth-segmented-btn ${isSignUp ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setErrorMsg('');
+                  }}
+                  disabled={isSubmitting || authState === 'verified'}
+                >
+                  Create Account
+                </button>
+              </div>
+
+              {/* Error & Success Alerts */}
+              {errorMsg && (
+                <div className="alert-box alert-error" role="alert">
+                  <AlertCircle size={16} />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+              {successMsg && (
+                <div className="alert-box alert-success" role="status">
+                  <CheckCircle2 size={16} />
+                  <span>{successMsg}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="auth-form">
+                {/* Tactical Role Tiles Selection */}
+                <div className="role-selector-block">
+                  <label className="form-label" id="role-selector-label">
+                    {isSignUp ? 'Select Account Role' : 'Select Sign-In Portal'}
+                  </label>
+                  <div
+                    className="role-tiles-grid"
+                    role="radiogroup"
+                    aria-labelledby="role-selector-label"
+                  >
+                    {rolesList.map((r) => {
+                      const Icon = r.icon;
+                      const isSelected = selectedRole === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          role="radio"
+                          id={`role-tile-${r.id}`}
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          className={`role-tile ${isSelected ? 'selected' : ''}`}
+                          onClick={() => setSelectedRole(r.id)}
+                          disabled={isSubmitting || authState === 'verified'}
+                        >
+                          <div className="role-tile-header">
+                            <div className="role-tile-icon-box">
+                              <Icon size={16} strokeWidth={1.8} />
+                            </div>
+                            <div className="role-tile-pip" aria-hidden="true" />
+                          </div>
+                          <div className="role-tile-body">
+                            <span className="role-tile-name">{r.title}</span>
+                            <span className="role-tile-desc">{r.subtitle}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Extra Registration Fields for Institution / Student */}
+                {isSignUp && selectedRole === 'institution' && (
+                  <div className="role-extra-fields">
+                    <div className="form-group">
+                      <label htmlFor="auth-institution-name" className="form-label">
+                        Institution Legal Name
+                      </label>
+                      <div className="glass-input-wrap">
+                        <Building2 size={16} className="glass-input-icon" />
+                        <input
+                          id="auth-institution-name"
+                          type="text"
+                          required
+                          placeholder="e.g. Oxford University"
+                          value={institutionName}
+                          onChange={(e) => setInstitutionName(e.target.value)}
+                          className="glass-input-field"
+                          disabled={isSubmitting || authState === 'verified'}
+                        />
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                    <div className="form-group">
+                      <label htmlFor="auth-registration-code" className="form-label">
+                        Government Accreditation / Code
+                      </label>
+                      <div className="glass-input-wrap">
+                        <Shield size={16} className="glass-input-icon" />
+                        <input
+                          id="auth-registration-code"
+                          type="text"
+                          required
+                          placeholder="e.g. REG-UK-2024-891"
+                          value={registrationNumber}
+                          onChange={(e) => setRegistrationNumber(e.target.value)}
+                          className="glass-input-field"
+                          disabled={isSubmitting || authState === 'verified'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-          {/* Role-specific extra fields during Signup */}
-          {isSignUp && selectedRole === 'institution' && (
-            <div className="role-extra-fields">
-              <div className="form-group">
-                <label className="form-label">Institution Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Massachusetts Institute of Technology"
-                  value={institutionName}
-                  onChange={e => setInstitutionName(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Accreditation / Registration No.</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. REG-2025-0812"
-                  value={registrationNumber}
-                  onChange={e => setRegistrationNumber(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-            </div>
-          )}
+                {isSignUp && selectedRole === 'student' && (
+                  <div className="role-extra-fields">
+                    <div className="form-group">
+                      <label htmlFor="auth-student-name" className="form-label">
+                        Full Legal Name
+                      </label>
+                      <div className="glass-input-wrap">
+                        <GraduationCap size={16} className="glass-input-icon" />
+                        <input
+                          id="auth-student-name"
+                          type="text"
+                          required
+                          placeholder="e.g. Sarah Mitchell"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          className="glass-input-field"
+                          disabled={isSubmitting || authState === 'verified'}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="auth-student-roll" className="form-label">
+                        Student Roll / Identity Number
+                      </label>
+                      <div className="glass-input-wrap">
+                        <Layers size={16} className="glass-input-icon" />
+                        <input
+                          id="auth-student-roll"
+                          type="text"
+                          required
+                          placeholder="e.g. CS-2022-8491"
+                          value={rollNumber}
+                          onChange={(e) => setRollNumber(e.target.value)}
+                          className="glass-input-field"
+                          disabled={isSubmitting || authState === 'verified'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-          {isSignUp && selectedRole === 'student' && (
-            <div className="role-extra-fields">
-              <div className="form-group">
-                <label className="form-label">Full Legal Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Sarah Mitchell"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Student Roll Number</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. CS-2022-8491"
-                  value={rollNumber}
-                  onChange={e => setRollNumber(e.target.value)}
-                  className="form-input"
-                />
-              </div>
-            </div>
-          )}
+                {/* Email Field with Optical Glass Container */}
+                <div className="form-group">
+                  <label htmlFor="auth-email-input" className="form-label">
+                    Email Address
+                  </label>
+                  <div className="glass-input-wrap">
+                    <Mail size={16} className="glass-input-icon" />
+                    <input
+                      id="auth-email-input"
+                      type="email"
+                      required
+                      placeholder="name@organization.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="glass-input-field"
+                      disabled={isSubmitting || authState === 'verified'}
+                    />
+                  </div>
+                </div>
 
-          {/* Email */}
-          <div className="form-group">
-            <label className="form-label">Email Address</label>
-            <div className="input-with-icon">
-              <Mail size={18} className="input-icon" />
-              <input
-                type="email"
-                required
-                placeholder="name@organization.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="form-input"
-              />
+                {/* Password Field with Optical Glass Container */}
+                <div className="form-group">
+                  <label htmlFor="auth-password-input" className="form-label">
+                    Password
+                  </label>
+                  <div className="glass-input-wrap">
+                    <Lock size={16} className="glass-input-icon" />
+                    <input
+                      id="auth-password-input"
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="••••••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="glass-input-field"
+                      disabled={isSubmitting || authState === 'verified'}
+                    />
+                  </div>
+                </div>
+
+                {/* Tactile Primary Authentication Button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting || authState === 'verified'}
+                  className={`auth-submit-btn-tactile ${
+                    authState === 'authenticating' ? 'loading' : ''
+                  } ${authState === 'verified' ? 'verified' : ''}`}
+                  id="auth-submit-btn"
+                >
+                  {authState === 'authenticating' ? (
+                    <span className="btn-content-wrap">
+                      <span className="btn-pulse-dot" aria-hidden="true" />
+                      <span>Authenticating...</span>
+                    </span>
+                  ) : authState === 'verified' ? (
+                    <span className="btn-content-wrap">
+                      <ShieldCheck size={16} className="btn-verified-icon" />
+                      <span>Identity Verified</span>
+                    </span>
+                  ) : (
+                    <span className="btn-content-wrap">
+                      <span>
+                        {isSignUp
+                          ? `Register as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`
+                          : 'Sign In to Dashboard'}
+                      </span>
+                      <ArrowRight size={15} className="btn-arrow-icon" />
+                    </span>
+                  )}
+                </button>
+              </form>
+
+              {/* Footer info */}
+              <div className="auth-footer-info">
+                <p>
+                  Secured with PostgreSQL Row-Level Security (RLS) &amp; Cryptographic Dual-Layer Signatures.
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Password */}
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <div className="input-with-icon">
-              <Lock size={18} className="input-icon" />
-              <input
-                type="password"
-                required
-                minLength={6}
-                placeholder="••••••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="form-input"
-              />
+          {/* Editorial Right Panel */}
+          <div className="auth-editorial-column">
+            <div className="auth-editorial-content">
+              <div className="auth-editorial-kicker">
+                <span className="mono-kicker">CRYPTOGRAPHIC ATTESTATION // L-2</span>
+              </div>
+
+              <blockquote className="auth-editorial-quote">
+                “XYPHER verifies not just the digital credential, but the continuous accreditation standing of the authority behind it.”
+              </blockquote>
+
+              <div className="auth-editorial-specs">
+                <div className="spec-item">
+                  <span className="spec-label">Security Protocol</span>
+                  <span className="spec-val">Dual-Layer On-Chain Registry</span>
+                </div>
+                <div className="spec-item">
+                  <span className="spec-label">Verification Time</span>
+                  <span className="spec-val">&lt; 380ms Latency</span>
+                </div>
+                <div className="spec-item">
+                  <span className="spec-label">Accreditation</span>
+                  <span className="spec-val">Live Dynamic Proof</span>
+                </div>
+              </div>
             </div>
           </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="btn-primary auth-submit-btn"
-          >
-            <span>
-              {isSubmitting
-                ? 'Processing...'
-                : isSignUp
-                ? `Register as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`
-                : 'Sign In to Dashboard'}
-            </span>
-            <ArrowRight size={18} />
-          </button>
-        </form>
-
-        {/* Footer info */}
-        <div className="auth-footer-info">
-          <p>
-            Secured with PostgreSQL Row-Level Security (RLS) & Supabase Identity.
-          </p>
         </div>
-      </div>
+      </section>
     </div>
-
-    {/* Editorial Right Panel */}
-    <div className="auth-editorial-column">
-      <div className="auth-editorial-content">
-        <div className="auth-editorial-kicker">
-          <span>Institutional Verification</span>
-        </div>
-
-        <blockquote className="auth-editorial-quote">
-          “Every year, thousands of fraudulent credentials pass unnoticed. This platform verifies not just the certificate — but the institution behind it.”
-        </blockquote>
-      </div>
-    </div>
-  </div>
-</section>
-</div>
-);
+  );
 };
+
+export default AuthPage;
