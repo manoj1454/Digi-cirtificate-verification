@@ -1,0 +1,19 @@
+{
+  "name": "credential-verification-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for certificate verification platform",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test --network hardhat",
+    "node": "hardhat node",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
+    "test:flow": "hardhat run scripts/test-flow.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.2.0",
+    "hardhat": "^2.22.18"
+  }
+}

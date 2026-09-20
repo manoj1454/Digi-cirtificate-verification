@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+.deployed_env
+*.deployed_env
+
+# Test Reports & Temp Files
+playwright-report/
+test-results/
+.temp/
+
+# Build Outputs
+dist/
+build/
+artifacts/
+cache/
+typechain/
+typechain-types/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor & OS files
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/*
+!.vscode/extensions.json
+.idea

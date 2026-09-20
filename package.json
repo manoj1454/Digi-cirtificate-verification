@@ -1,0 +1,37 @@
+{
+  "name": "credential-verification-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Off-chain foundation for Certificate Verification Platform",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "contracts"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=backend & npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "test:contracts": "npm run test --workspace=contracts",
+    "contracts:node": "npm run node --workspace=contracts",
+    "contracts:deploy": "npm run deploy --workspace=contracts",
+    "contracts:deploy:local": "npm run deploy:local --workspace=contracts",
+    "contracts:test:flow": "npm run test:flow --workspace=contracts",
+    "test:pinata": "npm run test:pinata --workspace=backend",
+    "test:lifecycle": "npm run test:lifecycle --workspace=backend",
+    "install:all": "npm install"
+  },
+  "keywords": [
+    "credential-verification",
+    "certificates",
+    "supabase",
+    "react",
+    "express"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

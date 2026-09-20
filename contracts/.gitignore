@@ -1,0 +1,14 @@
+# Environment Variables
+.env
+.env.*
+!.env.example
+# Test Reports
+playwright-report/
+test-results/
+
+# Hardhat / Foundry / artifacts
+artifacts/
+cache/
+typechain/
+typechain-types/
+node_modules/

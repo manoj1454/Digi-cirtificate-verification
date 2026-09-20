@@ -1,0 +1,1751 @@
+/* ==========================================================================
+   VeriCert — Editorial / Museum Design System
+   Aesthetic: Warm parchment canvas, elegant serif typography, thin hairline rules,
+   generous whitespace, archival document presentation.
+   Strictly NO cyberpunk, NO glow/blur effects, NO neon saturation, NO drop-shadows.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Core Color Tokens (Editorial / Museum Palette) */
+  --bg: #F2EFE7;                    /* Parchment background — cooler/greyer than typical cream, not #F4F1EA */
+  --text-primary: #211D1A;          /* Ink black */
+  --text-secondary: #5C5850;        /* Muted warm grey for secondary text */
+  --accent-primary: #5C1F2E;        /* Deep burgundy — primary actions, "Valid" verification state */
+  --accent-secondary: #1B2A4A;      /* Navy — used sparingly, e.g. regulator/institutional elements */
+  --accent-gold: #B08D3F;           /* Muted gold — reserved only for verified seals/badges, used very sparingly */
+  --accent-unaccredited: #A8763F;   /* Muted amber-brown — "issuer no longer accredited" state */
+  --accent-revoked: #8C3B3B;        /* Muted brick-red — "revoked" state */
+  --divider: rgba(92, 88, 80, 0.15); /* Thin hairline, roughly 15% opacity of --text-secondary */
+
+  /* Surface Hierarchy (Archival Paper & Document Presentation) */
+  --surface-paper: #FAF8F4;         /* Raised document sheet / museum card */
+  --surface-panel: #FAF8F4;
+  --surface-panel-hover: #F3EFE7;
+  --surface-card: #FAF8F4;
+  --surface-subtle: #EAE6DC;
+  --surface-input: #FFFFFF;
+
+  /* Typography Stacks */
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Restrained hairlines and subtle radius */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-none: none;
+}
+
+/* ==========================================================================
+   Base & Resets
+   ========================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  min-height: 100vh;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle selection highlight */
+::selection {
+  background-color: rgba(92, 31, 46, 0.16);
+  color: var(--text-primary);
+}
+
+/* Base Links & Inputs */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* Monospace restricted strictly to literal IDs & cryptographic hashes */
+code, pre, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--text-primary);
+  background: rgba(92, 88, 80, 0.08);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--divider);
+  letter-spacing: 0.02em;
+}
+
+/* Page Level Headers — Fraunces Serif */
+h1, h2, h3, h4, .brand-title, .modal-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+  font-optical-sizing: auto;
+}
+
+/* ==========================================================================
+   Application Shell
+   ========================================================================== */
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg);
+}
+
+.main-content {
+  flex: 1;
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2.5rem 2rem 5rem;
+}
+
+.main-content:has(.landing-page-container) {
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+/* ==========================================================================
+   Site Header / Navigation Bar (Museum Top Bar)
+   ========================================================================== */
+
+.site-header {
+  width: 100%;
+  background-color: var(--bg);
+  border-bottom: 1px solid var(--divider);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-xs);
+  background-color: var(--surface-paper);
+  border: 1px solid var(--divider);
+  color: var(--accent-primary);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+/* Status Pills */
+.status-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--divider);
+  background-color: var(--surface-paper);
+  font-size: 0.74rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--text-secondary);
+}
+
+.status-pill-success .status-dot {
+  background-color: var(--accent-primary);
+}
+
+.status-pill-warning .status-dot {
+  background-color: var(--accent-unaccredited);
+}
+
+.status-pill-info .status-dot {
+  background-color: var(--accent-secondary);
+}
+
+/* User Controls */
+.user-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-logged-box {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.user-email {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--divider);
+  background: var(--surface-paper);
+}
+
+.badge-regulator {
+  color: var(--accent-secondary);
+  border-color: rgba(27, 42, 74, 0.25);
+  background-color: rgba(27, 42, 74, 0.06);
+}
+
+.badge-institution {
+  color: var(--accent-primary);
+  border-color: rgba(92, 31, 46, 0.25);
+  background-color: rgba(92, 31, 46, 0.06);
+}
+
+.badge-student {
+  color: var(--text-secondary);
+  border-color: var(--divider);
+  background-color: var(--surface-paper);
+}
+
+.badge-company {
+  color: var(--text-primary);
+  border-color: var(--divider);
+  background-color: var(--surface-paper);
+}
+
+
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--divider);
+  background-color: var(--surface-paper);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.logout-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(92, 88, 80, 0.4);
+}
+
+.login-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-xs);
+  background-color: var(--accent-primary);
+  color: #FAF8F4;
+  border: 1px solid var(--accent-primary);
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Page Headers & Dashboard Layout (Archival Typography)
+   ========================================================================== */
+
+.page-header {
+  margin-bottom: 2.75rem;
+}
+
+.portal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--divider);
+  background: var(--surface-paper);
+}
+
+.dashboard-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-title {
+  font-family: var(--font-serif);
+  font-size: 2.4rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.dashboard-desc {
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-top: 0.65rem;
+  max-width: 780px;
+}
+
+/* ==========================================================================
+   Panels, Containers & Cards (Quiet Hairlines, NO Heavy Drop Shadows)
+   ========================================================================== */
+
+.card-panel {
+  background: var(--surface-panel);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 2.5rem 2.75rem;
+  margin-bottom: 2.25rem;
+  box-shadow: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  flex-wrap: wrap;
+}
+
+.panel-title {
+  font-family: var(--font-serif);
+  font-size: 1.45rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.panel-sub {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 0.35rem;
+}
+
+/* Metrics Grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2.25rem;
+}
+
+.metric-card {
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  padding: 1.75rem 2rem;
+  box-shadow: none;
+}
+
+.metric-label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.metric-value {
+  font-family: var(--font-serif);
+  font-size: 2.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0.4rem 0 0.2rem;
+  line-height: 1.1;
+}
+
+.metric-footer {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   Buttons (Editorial / Museum Actions)
+   ========================================================================== */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background-color: var(--accent-primary);
+  color: #FAF8F4;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #4A1724;
+  border-color: #4A1724;
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 400;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--surface-subtle);
+  border-color: rgba(92, 88, 80, 0.35);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.95rem;
+  background-color: transparent;
+  color: var(--accent-revoked);
+  border: 1px solid rgba(140, 59, 59, 0.3);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: rgba(140, 59, 59, 0.08);
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.btn-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+}
+
+/* ==========================================================================
+   Data Tables (Archival Museum Register)
+   ========================================================================== */
+
+.table-responsive {
+  overflow-x: auto;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--surface-paper);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-subtle);
+}
+
+td {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: middle;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover td {
+  background: rgba(234, 230, 220, 0.5);
+}
+
+/* Real names and credential titles carry visual weight */
+td .font-semibold, .table-title-cell {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.58rem;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.badge-active {
+  background: rgba(92, 31, 46, 0.08);
+  color: var(--accent-primary);
+  border: 1px solid rgba(92, 31, 46, 0.25);
+}
+
+.badge-pending {
+  background: rgba(168, 118, 63, 0.1);
+  color: var(--accent-unaccredited);
+  border: 1px solid rgba(168, 118, 63, 0.28);
+}
+
+.badge-revoked {
+  background: rgba(140, 59, 59, 0.1);
+  color: var(--accent-revoked);
+  border: 1px solid rgba(140, 59, 59, 0.28);
+}
+
+/* ==========================================================================
+   Alerts & Notifications
+   ========================================================================== */
+
+.alert-box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.25rem;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.alert-success {
+  background: rgba(92, 31, 46, 0.06);
+  border: 1px solid rgba(92, 31, 46, 0.25);
+  color: var(--text-primary);
+}
+
+.alert-success svg {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.alert-error {
+  background: rgba(140, 59, 59, 0.06);
+  border: 1px solid rgba(140, 59, 59, 0.25);
+  color: var(--text-primary);
+}
+
+.alert-error svg {
+  color: var(--accent-revoked);
+  flex-shrink: 0;
+}
+
+.alert-info {
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   THE HERO TREATMENT #1: Company Dashboard Verification Result Screen
+   Present the credential like an actual document — large serif title,
+   generous surrounding whitespace, restrained indicator (thin border or seal badge),
+   explicitly NO glow/neon banner.
+   ========================================================================== */
+
+.verification-result-wrapper {
+  width: 100%;
+  margin-top: 2.5rem;
+}
+
+.verification-card {
+  width: 100%;
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 3.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  box-shadow: none;
+}
+
+/* Solid Color Restrained State Indicator Bar (Left border, strictly NO glow) */
+.outcome-valid {
+  border-left: 4px solid var(--accent-primary);
+}
+
+.outcome-unaccredited {
+  border-left: 4px solid var(--accent-unaccredited);
+}
+
+.outcome-revoked {
+  border-left: 4px solid var(--accent-revoked);
+}
+
+.outcome-not-found {
+  border-left: 4px solid var(--text-secondary);
+}
+
+.outcome-icon-wrap {
+  display: none;
+}
+
+.outcome-content {
+  width: 100%;
+}
+
+.outcome-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.outcome-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pill-valid {
+  background: rgba(92, 31, 46, 0.08);
+  color: var(--accent-primary);
+  border: 1px solid rgba(92, 31, 46, 0.3);
+}
+
+/* Muted gold seal badge reserved for verified institutional standing */
+.pill-accredited {
+  background: rgba(176, 141, 63, 0.12);
+  color: var(--accent-gold);
+  border: 1px solid rgba(176, 141, 63, 0.35);
+}
+
+.pill-warning {
+  background: rgba(168, 118, 63, 0.1);
+  color: var(--accent-unaccredited);
+  border: 1px solid rgba(168, 118, 63, 0.3);
+}
+
+.pill-revoked {
+  background: rgba(140, 59, 59, 0.1);
+  color: var(--accent-revoked);
+  border: 1px solid rgba(140, 59, 59, 0.3);
+}
+
+.pill-muted {
+  background: rgba(92, 88, 80, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid var(--divider);
+}
+
+/* Hero Typography Block in Fraunces */
+.hero-typography-block {
+  margin: 0.75rem 0 1.5rem 0;
+}
+
+.hero-degree-title {
+  font-family: var(--font-serif);
+  font-size: 2.6rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+  margin-bottom: 0.45rem;
+}
+
+.hero-institution-title {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.outcome-title {
+  font-family: var(--font-serif);
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.45rem;
+}
+
+.outcome-title.text-success {
+  color: var(--accent-primary);
+}
+
+.outcome-title.text-warning {
+  color: var(--accent-unaccredited);
+}
+
+.outcome-title.text-danger {
+  color: var(--accent-revoked);
+}
+
+.outcome-desc {
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  max-width: 820px;
+}
+
+/* Archival Structured Metadata Grid */
+.outcome-details-grid {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--divider);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.75rem 2.25rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.detail-label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.detail-val {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.outcome-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2.25rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--divider);
+}
+
+/* ==========================================================================
+   Search & Verification Form (Company Dashboard)
+   ========================================================================== */
+
+.verify-search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .verify-search-form {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrap .search-icon {
+  position: absolute;
+  left: 1rem;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.verify-input-field {
+  width: 100%;
+  padding: 0.75rem 1.15rem 0.75rem 2.85rem;
+  background: #FFFFFF;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.verify-input-field:focus {
+  border-color: var(--accent-primary);
+}
+
+.verification-input-group {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.verification-input {
+  flex: 1;
+  padding: 0.75rem 1.15rem;
+  background: #FFFFFF;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.verification-input:focus {
+  border-color: var(--accent-primary);
+}
+
+/* ==========================================================================
+   THE HERO TREATMENT #2: Student Dashboard Certificate Display
+   Present each certificate like an authentic document / diploma —
+   generous whitespace, Fraunces serif titles, seal-like badge, quiet hairlines.
+   ========================================================================== */
+
+.student-id-panel {
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 2rem 2.25rem;
+  box-shadow: none;
+}
+
+.student-id-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.75rem;
+}
+
+.student-id-label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.student-id-val {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.certificates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 2rem;
+  margin-top: 1.5rem;
+}
+
+.student-cert-card {
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 2.5rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(92, 88, 80, 0.08), inset 0 0 0 5px var(--surface-paper), inset 0 0 0 6px rgba(92, 88, 80, 0.06);
+  transition: border-color 0.2s ease;
+}
+
+.student-cert-card:hover {
+  border-color: rgba(92, 88, 80, 0.35);
+}
+
+.cert-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Subtle museum seal touch */
+.cert-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-primary);
+  background: rgba(92, 31, 46, 0.06);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid rgba(92, 31, 46, 0.2);
+}
+
+.cert-date {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cert-degree-title {
+  font-family: var(--font-serif);
+  font-size: 1.65rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.25;
+  margin-top: 0.35rem;
+}
+
+.cert-institution-name {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.cert-meta-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1rem 1.15rem;
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-xs);
+}
+
+.cert-meta-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.cert-meta-label {
+  color: var(--text-secondary);
+}
+
+.cert-card-footer {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider);
+}
+
+/* Institutional Timeline Box */
+.issuance-timeline-box {
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  padding: 1.5rem 1.75rem;
+  margin-top: 1.5rem;
+}
+
+.timeline-track {
+  flex: 1;
+  height: 22px;
+  background: rgba(92, 88, 80, 0.08);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  position: relative;
+}
+
+.timeline-bar {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #FAF8F4;
+  transition: width 0.5s ease;
+}
+
+/* ==========================================================================
+   Modals & Overlays (Quiet, Refined Archival Folios)
+   ========================================================================== */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(33, 29, 26, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 2.5rem 2.75rem;
+  box-shadow: none;
+}
+
+.modal-title {
+  font-family: var(--font-serif);
+  font-size: 1.55rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.modal-sub {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-top: 0.35rem;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.form-label {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-input, .form-select {
+  width: 100%;
+  padding: 0.65rem 0.95rem;
+  background: #FFFFFF;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.form-input:focus, .form-select:focus {
+  border-color: var(--accent-primary);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--divider);
+}
+
+/* Approval Pending Card in Institution Dashboard */
+.approval-pending-card {
+  background: var(--surface-paper);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  padding: 3.5rem 3rem;
+  text-align: center;
+  max-width: 720px;
+  margin: 1.5rem auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  box-shadow: none;
+}
+
+.approval-pending-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-unaccredited);
+}
+
+.approval-pending-title {
+  font-family: var(--font-serif);
+  font-size: 1.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.approval-pending-desc {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.approval-pending-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.approval-step-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-xs);
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.approval-step-badge.pending {
+  color: var(--accent-unaccredited);
+}
+
+.approval-step-divider {
+  width: 30px;
+  height: 1px;
+  background: var(--divider);
+}
+
+/* ==========================================================================
+   XYPHER Landing Page: Hero / About Section
+   ========================================================================== */
+
+.landing-page-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.landing-hero-section {
+  width: 100%;
+  padding: 5rem 2rem 5.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background-color: var(--bg);
+}
+
+.landing-hero-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.5rem;
+}
+
+.landing-hero-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.landing-hero-title {
+  font-family: var(--font-serif);
+  font-size: clamp(3.5rem, 7vw, 5.25rem);
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.landing-hero-tagline {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--accent-primary);
+  margin: 0;
+}
+
+.landing-hero-description {
+  font-family: var(--font-sans);
+  font-size: 1.12rem;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  max-width: 780px;
+  margin: 0 auto;
+  font-weight: 400;
+}
+
+.landing-pillars-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: stretch;
+  gap: 2rem;
+  width: 100%;
+  padding: 1.85rem 0;
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+  margin: 0.25rem 0;
+}
+
+@media (max-width: 860px) {
+  .landing-pillars-row {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    text-align: left;
+  }
+  .landing-pillar-divider {
+    display: none;
+  }
+}
+
+.landing-pillar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.landing-pillar-label {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.landing-pillar-dash {
+  display: none;
+}
+
+.landing-pillar-text {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.landing-pillar-divider {
+  width: 1px;
+  background-color: var(--divider);
+  align-self: stretch;
+}
+
+.landing-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.landing-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 2.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   Auth Section (Restrained Frosted Glass over Subtle Textured/Gradiented Area)
+   ========================================================================== */
+
+.landing-auth-section {
+  width: 100%;
+  position: relative;
+  border-top: 1px solid var(--divider);
+  /* Elegant, subtle background variation: gentle multi-tonal gradients + fine architectural micro-grid */
+  background-color: #EDE8DF;
+  background-image:
+    radial-gradient(ellipse 70% 60% at 20% 35%, rgba(92, 31, 46, 0.055) 0%, transparent 65%),
+    radial-gradient(ellipse 65% 55% at 80% 65%, rgba(27, 42, 74, 0.045) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 45% at 50% 90%, rgba(176, 141, 63, 0.035) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(238, 234, 224, 0.6) 0%, rgba(242, 239, 231, 0.95) 100%),
+    radial-gradient(circle at 1px 1px, rgba(92, 88, 80, 0.08) 1px, transparent 0);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 28px 28px;
+  padding: 4.5rem 1.5rem 6.5rem;
+}
+
+.auth-container,
+.auth-page-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.08fr;
+  min-height: calc(100vh - 140px);
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
+  gap: 4.5rem;
+  align-items: center;
+}
+
+.landing-auth-section .auth-page-layout {
+  min-height: auto;
+  padding: 1.5rem 2rem;
+}
+
+@media (max-width: 960px) {
+  .auth-container,
+  .auth-page-layout,
+  .landing-auth-section .auth-page-layout {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    padding: 2rem 1.25rem;
+  }
+}
+
+.auth-form-column {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .auth-form-column {
+    justify-content: center;
+  }
+}
+
+.auth-card,
+.auth-card.frosted-card {
+  width: 100%;
+  max-width: 480px;
+  /* One large, confident border-radius around 28px applied only to this outer container */
+  border-radius: 28px;
+  /* Restrained frosted glass: parchment background at roughly 74% opacity with 12px blur */
+  background: rgba(242, 239, 231, 0.74);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Soft, barely-visible 1px border in a muted tone (not bright/white) */
+  border: 1px solid rgba(92, 88, 80, 0.16);
+  /* No drop shadow beneath the card — shadows plus blur look cheap; use blur only */
+  box-shadow: none !important;
+  padding: 2.75rem 2.5rem;
+}
+
+.auth-wordmark-tagline {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent-primary);
+  margin-top: 0.15rem;
+  margin-bottom: 0.85rem;
+}
+
+/* Editorial Right Column */
+.auth-editorial-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 3rem 1.5rem 3rem 3rem;
+  min-height: 100%;
+}
+
+@media (max-width: 960px) {
+  .auth-editorial-column {
+    padding: 3rem 0 1rem 0;
+    border-top: 1px solid var(--divider);
+  }
+}
+
+.auth-editorial-content {
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.auth-editorial-kicker {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--accent-primary);
+}
+
+.auth-editorial-quote {
+  font-family: var(--font-serif);
+  font-size: 2.35rem;
+  line-height: 1.36;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  letter-spacing: -0.018em;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.auth-logo-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--divider);
+  background: var(--surface-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
+  margin-bottom: 1rem;
+}
+
+.auth-title {
+  font-family: var(--font-serif);
+  font-size: 1.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+}
+
+.auth-sub {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: 1.75rem;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.75rem;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-tab.active {
+  color: var(--accent-primary);
+  font-weight: 600;
+  border-bottom-color: var(--accent-primary);
+}
+
+.role-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.role-card {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-xs);
+  background: var(--surface-subtle);
+  border: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  text-align: left;
+}
+
+.role-card:hover {
+  border-color: rgba(92, 88, 80, 0.4);
+}
+
+.role-card.active {
+  border-color: var(--accent-primary);
+  background: rgba(92, 31, 46, 0.05);
+}
+
+.role-card-title {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.role-card-sub {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Sharp / minimally rounded inner elements (2–4px max) to contrast against 28px outer curve */
+.auth-card .form-input {
+  border-radius: 3px !important;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--divider);
+}
+
+.auth-card .form-input:focus {
+  background-color: #FFFFFF;
+  border-color: var(--accent-primary);
+}
+
+.auth-card .auth-submit-btn {
+  border-radius: 3px !important;
+  width: 100%;
+  padding: 0.78rem 1.25rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.auth-card .auth-tab {
+  border-radius: 0 !important;
+}
+
+.auth-card .auth-logo-badge {
+  border-radius: 3px !important;
+}
+
+.auth-card .role-card {
+  border-radius: 3px !important;
+}
+
+/* ==========================================================================
+   Loading Spinners & Utility Classes
+   ========================================================================== */
+
+.cyber-spinner, .spin-slow, .spin-icon {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--divider);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.auth-loading-screen {
+  min-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.loading-text {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.flex-align {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.text-muted {
+  color: var(--text-secondary) !important;
+}
+
+.text-success {
+  color: var(--accent-primary) !important;
+}
+
+.text-warning {
+  color: var(--accent-unaccredited) !important;
+}
+
+.text-danger {
+  color: var(--accent-revoked) !important;
+}
+
+.text-accent {
+  color: var(--accent-primary) !important;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
