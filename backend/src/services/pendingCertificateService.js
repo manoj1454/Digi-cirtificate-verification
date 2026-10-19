@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 
 const dataDir = path.resolve(__dirname, '../../data');
 const fallbackFile = path.join(dataDir, 'pending_certificates.json');
@@ -30,11 +30,54 @@ function writeFallback(records) {
 }
 
 /**
- * Inserts a new pending certificate into Supabase, falling back to local storage
- * if public.pending_certificates has not been created yet in the SQL editor.
+ * Inserts a new pending certificate into Neon PostgreSQL.
+ * If running in a development environment without DATABASE_URL, uses explicit fallback.
+ * In production, Neon is strictly authoritative and failures are NOT masked.
  */
 async function createPendingCertificate(data) {
   const id = data.id || crypto.randomUUID();
+  const issueDate = data.issue_date || new Date().toISOString().split('T')[0];
+
+  if (db.isConfigured) {
+    try {
+      const result = await db.query(
+        `INSERT INTO pending_certificates (
+          id, institution_id, student_id, credential_id, ipfs_cid, sha256_hash,
+          degree_name, issue_date, created_by, approved_by, status, on_chain_tx_hash,
+          error_reason, created_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'pending_approval', NULL, NULL, NOW()
+        ) RETURNING *`,
+        [
+          id,
+          data.institution_id,
+          data.student_id,
+          data.credential_id,
+          data.ipfs_cid,
+          data.sha256_hash,
+          data.degree_name,
+          issueDate,
+          data.created_by,
+        ]
+      );
+      return result.rows[0];
+    } catch (err) {
+      // PostgreSQL unique constraint violation
+      if (err.code === '23505') {
+        const dupErr = new Error(`Credential ID '${data.credential_id}' already exists.`);
+        dupErr.status = 400;
+        throw dupErr;
+      }
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      console.warn('[PendingCertService] Neon insert warning in non-production:', err.message);
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    throw new Error('DATABASE_URL is not configured in production environment.');
+  }
+
+  // Development Fallback storage
   const record = {
     id,
     institution_id: data.institution_id,
@@ -43,7 +86,7 @@ async function createPendingCertificate(data) {
     ipfs_cid: data.ipfs_cid,
     sha256_hash: data.sha256_hash,
     degree_name: data.degree_name,
-    issue_date: data.issue_date || new Date().toISOString().split('T')[0],
+    issue_date: issueDate,
     created_by: data.created_by,
     approved_by: null,
     status: 'pending_approval',
@@ -52,31 +95,7 @@ async function createPendingCertificate(data) {
     created_at: new Date().toISOString(),
   };
 
-  try {
-    const { data: dbData, error } = await supabase
-      .from('pending_certificates')
-      .insert(record)
-      .select()
-      .single();
-
-    if (!error && dbData) {
-      return dbData;
-    }
-
-    if (error && error.code === 'PGRST205') {
-      console.warn(
-        '[PendingCertService] Table public.pending_certificates not found in Supabase schema cache. Using fallback storage.'
-      );
-    } else if (error) {
-      console.warn('[PendingCertService] Supabase insert warning:', error.message);
-    }
-  } catch (err) {
-    console.warn('[PendingCertService] Supabase connection error:', err.message);
-  }
-
-  // Local fallback storage
   const records = readFallback();
-  // Ensure credential_id uniqueness
   if (records.some((r) => r.credential_id === record.credential_id)) {
     const dupErr = new Error(`Credential ID '${record.credential_id}' already exists.`);
     dupErr.status = 400;
@@ -91,26 +110,25 @@ async function createPendingCertificate(data) {
  * Retrieves a pending certificate by its UUID or credential_id.
  */
 async function getPendingCertificate(idOrCredentialId) {
-  try {
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      idOrCredentialId
-    );
-
-    const query = supabase.from('pending_certificates').select('*');
-    if (isUuid) {
-      query.or(`id.eq.${idOrCredentialId},credential_id.eq.${idOrCredentialId}`);
-    } else {
-      query.eq('credential_id', idOrCredentialId);
+  if (db.isConfigured) {
+    try {
+      const result = await db.query(
+        `SELECT * FROM pending_certificates
+         WHERE id::text = $1 OR credential_id = $1
+         LIMIT 1`,
+        [idOrCredentialId]
+      );
+      if (result.rows.length > 0) {
+        return result.rows[0];
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
     }
-
-    const { data, error } = await query.maybeSingle();
-    if (!error && data) {
-      return data;
-    }
-  } catch (err) {
-    // Ignore and check fallback
   }
 
+  // Non-production fallback check
   const records = readFallback();
   return (
     records.find((r) => r.id === idOrCredentialId || r.credential_id === idOrCredentialId) || null
@@ -123,21 +141,41 @@ async function getPendingCertificate(idOrCredentialId) {
 async function updatePendingCertificate(id, updates) {
   let updatedRecord = null;
 
-  try {
-    const { data, error } = await supabase
-      .from('pending_certificates')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .maybeSingle();
+  if (db.isConfigured) {
+    try {
+      // Build dynamic parameterized update
+      const fields = [];
+      const values = [id];
+      let paramIndex = 2;
 
-    if (!error && data) {
-      updatedRecord = data;
+      for (const [key, val] of Object.entries(updates)) {
+        if (['status', 'approved_by', 'on_chain_tx_hash', 'error_reason'].includes(key)) {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(val);
+          paramIndex++;
+        }
+      }
+
+      if (fields.length > 0) {
+        const queryText = `UPDATE pending_certificates
+          SET ${fields.join(', ')}
+          WHERE id::text = $1 OR credential_id = $1
+          RETURNING *`;
+        const result = await db.query(queryText, values);
+        if (result.rows.length > 0) {
+          updatedRecord = result.rows[0];
+          return updatedRecord;
+        }
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      console.warn('[PendingCertService] Error updating pending certificate in Neon:', err.message);
     }
-  } catch (err) {
-    // Ignore and update fallback
   }
 
+  // Development Fallback storage
   const records = readFallback();
   const index = records.findIndex((r) => r.id === id || r.credential_id === id);
   if (index !== -1) {
@@ -152,10 +190,47 @@ async function updatePendingCertificate(id, updates) {
 }
 
 /**
- * Inserts the finalized certificate into the main public.certificates table.
+ * Inserts the finalized certificate into the main certificates table in Neon.
+ * Handles duplicate credential ID gracefully via ON CONFLICT to prevent duplicates on retry.
  */
 async function saveFinalizedCertificate(pendingCert, txHash) {
-  const certRow = {
+  if (db.isConfigured) {
+    try {
+      const result = await db.query(
+        `INSERT INTO certificates (
+          credential_id, student_id, institution_id, ipfs_hash,
+          on_chain_tx_hash, degree_name, issue_date, revoked, created_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, false, NOW()
+        )
+        ON CONFLICT (credential_id) DO UPDATE SET
+          on_chain_tx_hash = EXCLUDED.on_chain_tx_hash,
+          ipfs_hash = EXCLUDED.ipfs_hash
+        RETURNING *`,
+        [
+          pendingCert.credential_id,
+          pendingCert.student_id,
+          pendingCert.institution_id,
+          pendingCert.ipfs_cid,
+          txHash,
+          pendingCert.degree_name,
+          pendingCert.issue_date,
+        ]
+      );
+      return result.rows[0];
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      console.warn('[PendingCertService] Neon insert warning in non-production:', err.message);
+    }
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DATABASE_URL is not configured for certificate finalization.');
+  }
+
+  return {
     credential_id: pendingCert.credential_id,
     student_id: pendingCert.student_id,
     institution_id: pendingCert.institution_id,
@@ -165,15 +240,6 @@ async function saveFinalizedCertificate(pendingCert, txHash) {
     issue_date: pendingCert.issue_date,
     revoked: false,
   };
-
-  const { data, error } = await supabase.from('certificates').insert(certRow).select().maybeSingle();
-
-  if (error) {
-    console.error('[PendingCertService] Error inserting finalized certificate into public.certificates:', error);
-    throw error;
-  }
-
-  return data;
 }
 
 module.exports = {

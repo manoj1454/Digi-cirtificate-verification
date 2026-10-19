@@ -53,18 +53,37 @@ async function runTest() {
   console.log(`Created Owner in Supabase Auth: ${OWNER_EMAIL} (UID: ${ownerUserId})`);
 
   // Insert into institutions with status = approved
-  const { data: inst, error: instErr } = await adminClient
-    .from('institutions')
-    .insert({
-      user_id: ownerUserId,
-      name: `Oxford University (${timestamp})`,
-      registration_number: `OXF-${timestamp}`,
-      status: 'approved',
-      approved_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-  if (instErr) throw instErr;
+  const db = require('../src/config/database');
+  let inst = { id: require('crypto').randomUUID(), name: `Oxford University (${timestamp})` };
+
+  if (db.isConfigured) {
+    await db.query(
+      `INSERT INTO users (id, email, role, full_name, updated_at)
+       VALUES ($1, $2, 'institution', 'Dean Alistair', NOW())
+       ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = 'institution'`,
+      [ownerUserId, OWNER_EMAIL]
+    );
+
+    const instRes = await db.query(
+      `INSERT INTO institutions (user_id, name, registration_number, status, approved_at)
+       VALUES ($1, $2, $3, 'approved', NOW())
+       RETURNING *`,
+      [ownerUserId, `Oxford University (${timestamp})`, `OXF-${timestamp}`]
+    );
+    inst = instRes.rows[0];
+
+    await db.query(
+      `UPDATE users SET institution_id = $1 WHERE id = $2`,
+      [inst.id, ownerUserId]
+    );
+
+    await db.query(
+      `INSERT INTO institution_staff (institution_id, user_id, role)
+       VALUES ($1, $2, 'admin')
+       ON CONFLICT (institution_id, user_id) DO NOTHING`,
+      [inst.id, ownerUserId]
+    );
+  }
   console.log(`Created & Approved Institution in DB: "${inst.name}" (ID: ${inst.id})`);
 
   // Add institution to blockchain registry if not added
@@ -75,14 +94,6 @@ async function runTest() {
   } catch (e) {
     console.log(`On-chain registration note:`, e.message);
   }
-
-  // Also update Owner's users table
-  await adminClient.from('users').upsert({
-    id: ownerUserId,
-    email: OWNER_EMAIL,
-    role: 'institution',
-    institution_id: inst.id,
-  });
 
   // 2. Log in as Owner (Session 1)
   console.log('\n--- Step 2: Session 1 Login (Owner / Initiator) ---');

@@ -9,6 +9,8 @@ const healthRouter = require('./routes/health');
 const certificatesRouter = require('./routes/certificates');
 const institutionsRouter = require('./routes/institutions');
 const studentsRouter = require('./routes/students');
+const usersRouter = require('./routes/users');
+const db = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -70,15 +72,19 @@ app.use('/health', healthRouter);
 app.use('/api/certificates', certificatesRouter);
 app.use('/api/institutions', institutionsRouter);
 app.use('/api/students', studentsRouter);
+app.use('/api/users', usersRouter);
 
 app.get('/', (req, res) => {
   res.json({
     name: 'Certificate Verification Platform API',
     status: 'running',
     version: '1.0.0',
+    database: 'neon-postgresql',
     endpoints: {
       health: '/api/health',
       certificatesUpload: '/api/certificates/upload',
+      usersMe: '/api/users/me',
+      usersProfile: '/api/users/profile',
     },
   });
 });
@@ -92,6 +98,19 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error', details: err.message });
+});
+
+// Graceful pool shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Draining database pool...');
+  await db.shutdown();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received. Draining database pool...');
+  await db.shutdown();
+  process.exit(0);
 });
 
 // Start Server

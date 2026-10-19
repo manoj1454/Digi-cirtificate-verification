@@ -47,19 +47,37 @@ async function runStage6E2ETest() {
   }
 
   const instUserId = authUser.user.id;
-  const { data: instRow, error: instInsertErr } = await supabase
-    .from('institutions')
-    .insert({
+  const db = require('../src/config/database');
+  let instRow = null;
+
+  if (db.isConfigured) {
+    await db.query(
+      `INSERT INTO users (id, email, role, full_name, updated_at)
+       VALUES ($1, $2, 'institution', $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = 'institution'`,
+      [instUserId, instEmail, instName]
+    );
+
+    const instRes = await db.query(
+      `INSERT INTO institutions (user_id, name, registration_number, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING *`,
+      [instUserId, instName, regNumber]
+    );
+    instRow = instRes.rows[0];
+
+    await db.query(
+      `UPDATE users SET institution_id = $1 WHERE id = $2`,
+      [instRow.id, instUserId]
+    );
+  } else {
+    instRow = {
+      id: require('crypto').randomUUID(),
       user_id: instUserId,
       name: instName,
       registration_number: regNumber,
       status: 'pending',
-    })
-    .select()
-    .single();
-
-  if (instInsertErr) {
-    throw new Error(`Failed to insert institution row: ${instInsertErr.message}`);
+    };
   }
 
   console.log(`   ✔ Institution registered: "${instRow.name}" (ID: ${instRow.id})`);

@@ -53,21 +53,30 @@ async function main() {
   // ===========================================================================
   console.log('--- 2. Testing Anomaly Monitoring Rule ---');
   const { checkIssuanceAnomaly, getAnomalyFlags } = require('../src/services/anomalyService');
-  const { supabase } = require('../src/config/supabase');
+  const db = require('../src/config/database');
   const testInstitutionId = '5695fb1c-818a-49b4-bbe3-2b6cbd60bb59'; // Oxford University
 
   // Insert a fresh test certificate created right now for Oxford
   const testCredId = `CRED-ANOMALY-TEST-${Date.now().toString().slice(-6)}`;
   console.log(`Inserting fresh certificate (${testCredId}) for institution ${testInstitutionId}...`);
-  await supabase.from('certificates').insert({
-    credential_id: testCredId,
-    institution_id: testInstitutionId,
-    student_id: 'a0a7fdab-b081-461b-b14a-e9ed11e1f3f8',
-    degree_name: 'Anomaly Test Degree',
-    issue_date: new Date().toISOString().split('T')[0],
-    created_at: new Date().toISOString(),
-    revoked: false,
-  });
+  if (db.isConfigured) {
+    try {
+      await db.query(
+        `INSERT INTO certificates (credential_id, institution_id, student_id, degree_name, issue_date, created_at, revoked)
+         VALUES ($1, $2, $3, $4, $5, NOW(), false)
+         ON CONFLICT (credential_id) DO NOTHING`,
+        [
+          testCredId,
+          testInstitutionId,
+          'a0a7fdab-b081-461b-b14a-e9ed11e1f3f8',
+          'Anomaly Test Degree',
+          new Date().toISOString().split('T')[0],
+        ]
+      );
+    } catch (e) {
+      console.warn('Note: Could not insert certificate into Neon:', e.message);
+    }
+  }
 
   console.log(`Simulating issuance anomaly check for Institution ${testInstitutionId}...`);
   // Set temporary environment threshold to 1 so the check triggers

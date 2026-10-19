@@ -18,15 +18,24 @@ try {
 }
 
 const rpcUrl = process.env.BLOCKCHAIN_RPC_URL || 'http://127.0.0.1:8545';
-// Default to standard Hardhat Account #0 private key if not explicitly set
-const operatorPrivateKey = process.env.OPERATOR_PRIVATE_KEY || '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+// Default to standard Hardhat Account #0 private key if not explicitly set or if placeholder is provided
+const DEFAULT_HARDHAT_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+const rawKey = process.env.OPERATOR_PRIVATE_KEY;
+const isPlaceholderKey = !rawKey || rawKey.includes('YOUR_') || rawKey.length !== 66;
 
-if (!process.env.OPERATOR_PRIVATE_KEY) {
+const operatorPrivateKey = isPlaceholderKey ? DEFAULT_HARDHAT_KEY : rawKey;
+
+if (isPlaceholderKey) {
   console.log('[Blockchain] Using default Hardhat operator key');
 }
 
 const provider = new ethers.JsonRpcProvider(rpcUrl);
-const signer = operatorPrivateKey ? new ethers.Wallet(operatorPrivateKey, provider) : null;
+let signer = null;
+try {
+  signer = operatorPrivateKey ? new ethers.Wallet(operatorPrivateKey, provider) : null;
+} catch (keyErr) {
+  console.warn('[Blockchain] Warning: Failed to initialize wallet signer:', keyErr.message);
+}
 
 // Resolve contract addresses: prefer freshly deployed local addresses if on local node
 const isLocalRpc = (!rpcUrl || rpcUrl.includes('127.0.0.1') || rpcUrl.includes('localhost'));

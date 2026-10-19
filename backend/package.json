@@ -6,8 +6,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon --ignore data/ src/server.js",
+    "test:neon": "node scripts/test-neon-migration.js",
+    "test:auth": "node scripts/test-all-rls-policies.js",
     "test:pinata": "node scripts/test-pinata-upload.js",
-    "test:lifecycle": "node scripts/test-certificate-lifecycle.js"
+    "test:lifecycle": "node scripts/test-certificate-lifecycle.js",
+    "setup:demo": "node scripts/setup-demo-accounts.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

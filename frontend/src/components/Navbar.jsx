@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, ArrowRight, UserCheck } from 'lucide-react';
+import { ShieldCheck, LogOut, UserCheck } from 'lucide-react';
 
 export const Navbar = () => {
   const { user, role, signOut, isSupabaseConfigured } = useAuth();
   const navigate = useNavigate();
   const [apiOnline, setApiOnline] = useState(null);
+  const [dbConnected, setDbConnected] = useState(null);
 
   useEffect(() => {
     const checkApi = async () => {
@@ -16,12 +17,15 @@ export const Navbar = () => {
         const res = await fetch(`${apiUrl}/api/health`);
         if (res.ok) {
           const data = await res.json();
-          setApiOnline(data.status === 'ok');
+          setApiOnline(true);
+          setDbConnected(Boolean(data.database?.connected));
         } else {
           setApiOnline(false);
+          setDbConnected(false);
         }
       } catch (e) {
         setApiOnline(false);
+        setDbConnected(false);
       }
     };
     checkApi();
@@ -60,15 +64,21 @@ export const Navbar = () => {
 
         <div className="status-pills">
           {/* Express Backend indicator */}
-          <div className={`status-pill ${apiOnline ? 'status-pill-success' : 'status-pill-warning'}`} title={apiOnline ? "Express API Healthy" : "Express API Not Connected"}>
+          <div
+            className={`status-pill ${apiOnline ? 'status-pill-success' : 'status-pill-warning'}`}
+            title={apiOnline ? 'Express API Healthy' : 'Express API Not Connected'}
+          >
             <span className="status-dot"></span>
             <span>Express API: {apiOnline === null ? 'Checking...' : apiOnline ? 'Online' : 'Offline'}</span>
           </div>
 
-          {/* Supabase indicator */}
-          <div className={`status-pill ${isSupabaseConfigured ? 'status-pill-success' : 'status-pill-info'}`} title={isSupabaseConfigured ? "Connected to Supabase" : "Using Local Demo Mode"}>
+          {/* Database indicator (Neon PostgreSQL via backend) */}
+          <div
+            className={`status-pill ${dbConnected ? 'status-pill-success' : 'status-pill-info'}`}
+            title={dbConnected ? 'Connected to Neon PostgreSQL' : 'Database in Standby / Demo Mode'}
+          >
             <span className="status-dot"></span>
-            <span>DB: {isSupabaseConfigured ? 'Supabase Connected' : 'Demo / Standby'}</span>
+            <span>DB: {dbConnected === null ? 'Checking...' : dbConnected ? 'Neon Connected' : 'Standby / Demo'}</span>
           </div>
         </div>
 
@@ -90,7 +100,6 @@ export const Navbar = () => {
           ) : (
             <Link to="/login" className="login-nav-btn">
               <span>Sign In</span>
-              <ArrowRight size={16} />
             </Link>
           )}
         </div>

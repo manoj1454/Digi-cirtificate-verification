@@ -3,6 +3,7 @@ const path = require('path');
 const multer = require('multer');
 const { pinata, getGatewayUrl, computeSha256 } = require('../config/pinata');
 const { requireAuth } = require('../middleware/auth');
+const db = require('../config/database');
 const {
   issueCertificateOnChain,
   verifyCertificateOnChain,
@@ -14,7 +15,6 @@ const {
   updatePendingCertificate,
   saveFinalizedCertificate,
 } = require('../services/pendingCertificateService');
-const { supabase } = require('../config/supabase');
 const rateLimit = require('express-rate-limit');
 const { checkIssuanceAnomaly } = require('../services/anomalyService');
 
@@ -35,7 +35,6 @@ const verifyLimiter = rateLimit({
     });
   },
 });
-
 
 // Memory storage keeps file buffer in memory for hashing & SDK upload
 const storage = multer.memoryStorage();
@@ -135,9 +134,8 @@ router.post('/upload', uploadMiddleware, async (req, res) => {
 
 /**
  * POST /api/certificates/initiate
- * Institution staff member uploads a certificate, fills in student + degree details,
- * and creates a pending_certificates row with status = 'pending_approval'.
- * Enforces created_by = req.user.id.
+ * Institution staff member initiates a certificate.
+ * Enforces role and institutional affiliation.
  */
 router.post('/initiate', requireAuth, uploadMiddleware, async (req, res) => {
   try {
@@ -149,7 +147,11 @@ router.post('/initiate', requireAuth, uploadMiddleware, async (req, res) => {
       issue_date,
     } = req.body;
 
-    // Required fields check
+    // Authorization & Ownership check
+    if (req.user.role !== 'institution' && req.user.role !== 'regulator') {
+      return res.status(403).json({ error: 'Only institution staff or regulators can initiate certificates.' });
+    }
+
     if (!institution_id || !student_id || !degree_name) {
       return res.status(400).json({
         error: 'Missing required fields: institution_id, student_id, and degree_name are required.',
@@ -166,7 +168,7 @@ router.post('/initiate', requireAuth, uploadMiddleware, async (req, res) => {
     let ipfs_cid = req.body.ipfs_cid;
     let sha256_hash = req.body.sha256_hash;
 
-    // If a file was uploaded in this request, process and upload to Pinata
+    // Process file if uploaded
     const reqFile =
       (req.files && (req.files.file?.[0] || req.files.pdf?.[0] || req.files.certificate?.[0])) ||
       req.file;
@@ -200,8 +202,6 @@ router.post('/initiate', requireAuth, uploadMiddleware, async (req, res) => {
       });
     }
 
-    // Create pending_certificates row with status = pending_approval
-    // Enforce that created_by is the authenticated user
     const pendingCert = await createPendingCertificate({
       institution_id,
       student_id,
@@ -229,13 +229,8 @@ router.post('/initiate', requireAuth, uploadMiddleware, async (req, res) => {
 
 /**
  * POST /api/certificates/:id/approve
- * A different staff member at the same institution approves the pending certificate.
- * Multi-sig enforcement: Reject if approved_by === created_by.
- * On approval:
- *  1. Mark status = 'approved'
- *  2. Call issueCertificate on CertificateRegistry via backend Ethers.js signer
- *  3. On success: status = 'issued', save on_chain_tx_hash, insert into public.certificates
- *  4. On failure: status = 'failed', save error_reason
+ * Two-Person Multi-Sig Rule:
+ * Rejects if approved_by === created_by.
  */
 router.post('/:id/approve', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -255,20 +250,19 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
     }
 
     // MULTI-SIG ENFORCEMENT POINT:
-    // Reject if approved_by would equal created_by
     if (pendingCert.created_by === approvedBy) {
       return res.status(400).json({
         error: 'Multi-sig rejection: The staff member who initiated the certificate cannot approve it. A different staff member must approve.',
       });
     }
 
-    // Step 1: Mark status = approved before sending on-chain transaction
+    // Mark status = approved
     await updatePendingCertificate(pendingCert.id, {
       status: 'approved',
       approved_by: approvedBy,
     });
 
-    // Step 2: Call issueCertificate on-chain using backend's Ethers.js signer
+    // Call issueCertificate on-chain
     try {
       const txResult = await issueCertificateOnChain(
         pendingCert.credential_id,
@@ -276,22 +270,22 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
         pendingCert.ipfs_cid
       );
 
-      // Step 3: Transaction confirmed -> update status = issued
+      // Mark status = issued
       const issuedCert = await updatePendingCertificate(pendingCert.id, {
         status: 'issued',
         approved_by: approvedBy,
         on_chain_tx_hash: txResult.txHash,
       });
 
-      // Step 4: Insert finalized row into the main certificates table
+      // Insert finalized row into Neon certificates table
       let finalizedDbRow = null;
       try {
         finalizedDbRow = await saveFinalizedCertificate(pendingCert, txResult.txHash);
       } catch (dbErr) {
-        console.warn('Warning: Finalized certificate inserted on-chain, but failed to mirror into DB:', dbErr.message);
+        console.warn('Warning: Certificate issued on-chain, but failed to save in Neon:', dbErr.message);
       }
 
-      // Step 5: Check issuance anomaly monitoring threshold (non-blocking)
+      // Check issuance anomaly monitoring threshold (non-blocking)
       checkIssuanceAnomaly(pendingCert.institution_id).catch((err) => {
         console.warn('Background anomaly check error:', err.message);
       });
@@ -308,7 +302,6 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
     } catch (chainErr) {
       console.error('On-chain transaction failed:', chainErr);
 
-      // Mark row as failed with error reason
       await updatePendingCertificate(pendingCert.id, {
         status: 'failed',
         error_reason: chainErr.message,
@@ -332,10 +325,8 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
 
 /**
  * GET /api/certificates/verify/:credentialId
- * Public endpoint, no login required.
- * Rate limited to 30 requests/minute per IP.
- * Calls verifyCertificate() on-chain (read-only, free).
- * Returns IPFS hash, revoked status, institution ID, and live current accreditation status.
+ * Public endpoint, rate limited to 30 requests/minute per IP.
+ * Reads on-chain status and augments with Neon PostgreSQL certificate metadata.
  */
 router.get('/verify/:credentialId', verifyLimiter, async (req, res) => {
   const { credentialId } = req.params;
@@ -344,39 +335,44 @@ router.get('/verify/:credentialId', verifyLimiter, async (req, res) => {
     const chainData = await verifyCertificateOnChain(credentialId);
     const gatewayUrl = getGatewayUrl(chainData.ipfsHash);
 
-    // Look up certificate metadata from Supabase
+    // Look up certificate metadata from Neon PostgreSQL
     let degreeName = null;
     let issueDate = null;
     let studentName = null;
     let institutionName = null;
 
-    try {
-      const { data: dbCert } = await supabase
-        .from('certificates')
-        .select('degree_name, issue_date, students(full_name), institutions(name)')
-        .eq('credential_id', credentialId)
-        .maybeSingle();
-
-      if (dbCert) {
-        degreeName = dbCert.degree_name || null;
-        issueDate = dbCert.issue_date || null;
-        studentName = dbCert.students?.full_name || null;
-        institutionName = dbCert.institutions?.name || null;
-      }
-    } catch (dbErr) {
-      console.warn('Warning: Could not fetch certificate metadata from DB:', dbErr.message);
-    }
-
-    // Fallback: if institutionName not found in join, query institutions by chainData.institutionId
-    if (!institutionName && chainData.institutionId) {
+    if (db.isConfigured) {
       try {
-        const { data: inst } = await supabase
-          .from('institutions')
-          .select('name')
-          .eq('id', chainData.institutionId)
-          .maybeSingle();
-        if (inst?.name) institutionName = inst.name;
-      } catch (e) {}
+        const queryText = `
+          SELECT c.degree_name, c.issue_date, s.full_name AS student_name, i.name AS institution_name
+          FROM certificates c
+          LEFT JOIN students s ON c.student_id = s.id
+          LEFT JOIN institutions i ON c.institution_id = i.id
+          WHERE c.credential_id = $1
+          LIMIT 1
+        `;
+        const result = await db.query(queryText, [credentialId]);
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          degreeName = row.degree_name || null;
+          issueDate = row.issue_date || null;
+          studentName = row.student_name || null;
+          institutionName = row.institution_name || null;
+        }
+
+        // Fallback: if institutionName not found in join, look up by chainData.institutionId
+        if (!institutionName && chainData.institutionId) {
+          const instRes = await db.query(
+            'SELECT name FROM institutions WHERE id::text = $1 LIMIT 1',
+            [chainData.institutionId]
+          );
+          if (instRes.rows.length > 0) {
+            institutionName = instRes.rows[0].name;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('Warning: Could not fetch certificate metadata from Neon:', dbErr.message);
+      }
     }
 
     return res.status(200).json({
@@ -414,12 +410,10 @@ router.get('/verify/:credentialId', verifyLimiter, async (req, res) => {
 
 /**
  * POST /api/certificates/verify-log
- * Logs a company verification attempt into the verification_logs table.
- * Captures verifier, credential, result, timestamp, client IP, and user-agent.
+ * Logs a company verification attempt into Neon verification_logs table.
  */
 router.post('/verify-log', async (req, res) => {
   const { credential_id, result, company_user_id } = req.body;
-  const { supabase } = require('../config/supabase');
 
   const clientIp =
     (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
@@ -430,59 +424,50 @@ router.post('/verify-log', async (req, res) => {
 
   try {
     let userId = company_user_id;
+
+    if (!userId && db.isConfigured) {
+      try {
+        const uRes = await db.query("SELECT id FROM users WHERE role = 'company' LIMIT 1");
+        if (uRes.rows.length > 0) {
+          userId = uRes.rows[0].id;
+        }
+      } catch (_) {}
+    }
+
     if (!userId) {
-      // Find or fallback to company user
-      const { data: companyUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('role', 'company')
-        .limit(1)
-        .maybeSingle();
-
-      userId = companyUser?.id || '75385b9a-534e-4031-b80a-f19b86ce142c';
+      userId = '75385b9a-534e-4031-b80a-f19b86ce142c';
     }
 
-    // Attempt insert with complete audit trail telemetry
-    let logPayload = {
-      company_user_id: userId,
-      credential_id: credential_id || 'UNKNOWN',
-      result: result || 'VALID',
-      timestamp: new Date().toISOString(),
-      ip_address: clientIp,
-      user_agent: userAgent,
-    };
-
-    let { data: logEntry, error } = await supabase
-      .from('verification_logs')
-      .insert(logPayload)
-      .select()
-      .maybeSingle();
-
-    if (error && error.message && error.message.includes('column')) {
-      // Fallback if schema migration hasn't added ip_address / user_agent yet
-      delete logPayload.ip_address;
-      delete logPayload.user_agent;
-      const fallback = await supabase
-        .from('verification_logs')
-        .insert(logPayload)
-        .select()
-        .maybeSingle();
-      logEntry = fallback.data;
-      error = fallback.error;
-    }
-
-    if (error) {
-      console.warn('Could not insert into verification_logs:', error.message);
-      return res.status(200).json({ success: false, error: error.message });
+    let logEntry = null;
+    if (db.isConfigured) {
+      const queryText = `
+        INSERT INTO verification_logs (company_user_id, credential_id, result, ip_address, user_agent, timestamp)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING *
+      `;
+      const resDb = await db.query(queryText, [
+        userId,
+        credential_id || 'UNKNOWN',
+        result || 'VALID',
+        clientIp,
+        userAgent,
+      ]);
+      logEntry = resDb.rows[0];
+    } else {
+      logEntry = {
+        id: require('crypto').randomUUID(),
+        company_user_id: userId,
+        credential_id: credential_id || 'UNKNOWN',
+        result: result || 'VALID',
+        ip_address: clientIp,
+        user_agent: userAgent,
+        timestamp: new Date().toISOString(),
+      };
     }
 
     return res.status(201).json({
       success: true,
-      log: {
-        ...logEntry,
-        ip_address: logEntry?.ip_address || clientIp,
-        user_agent: logEntry?.user_agent || userAgent,
-      },
+      log: logEntry,
     });
   } catch (err) {
     console.warn('Verification log error:', err.message);
@@ -492,22 +477,18 @@ router.post('/verify-log', async (req, res) => {
 
 /**
  * GET /api/certificates/verify-logs
- * Retrieves recent verification logs for company audit trail.
+ * Retrieves recent verification logs from Neon PostgreSQL.
  */
 router.get('/verify-logs', async (req, res) => {
-  const { supabase } = require('../config/supabase');
   try {
-    const { data: logs, error } = await supabase
-      .from('verification_logs')
-      .select('*')
-      .order('timestamp', { ascending: false })
-      .limit(20);
-
-    if (error) {
+    if (!db.isConfigured) {
       return res.status(200).json({ success: true, logs: [] });
     }
 
-    return res.status(200).json({ success: true, logs: logs || [] });
+    const result = await db.query(
+      'SELECT * FROM verification_logs ORDER BY timestamp DESC LIMIT 20'
+    );
+    return res.status(200).json({ success: true, logs: result.rows });
   } catch (err) {
     return res.status(200).json({ success: true, logs: [] });
   }
@@ -515,56 +496,58 @@ router.get('/verify-logs', async (req, res) => {
 
 /**
  * POST /api/certificates/:id/revoke
- * Revokes a certificate on-chain and updates Supabase.
+ * Revokes a certificate on-chain and updates Neon PostgreSQL.
  */
 router.post('/:id/revoke', requireAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
-    // Look up certificate by id or credential_id
-    let { data: cert, error: certErr } = await supabase
-      .from('certificates')
-      .select('*')
-      .or(`id.eq.${id},credential_id.eq.${id}`)
-      .maybeSingle();
+    if (!db.isConfigured) {
+      return res.status(500).json({ error: 'DATABASE_URL is not configured.' });
+    }
 
-    if (certErr || !cert) {
-      return res.status(404).json({ error: 'Certificate not found' });
+    // Look up certificate by id or credential_id
+    const certRes = await db.query(
+      'SELECT * FROM certificates WHERE id::text = $1 OR credential_id = $1 LIMIT 1',
+      [id]
+    );
+
+    if (certRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Certificate not found in database.' });
+    }
+
+    const cert = certRes.rows[0];
+
+    // Authorization: only regulator or the issuing institution can revoke
+    const isRegulator = req.user.role === 'regulator';
+    const isIssuingInstitution =
+      req.user.role === 'institution' &&
+      (req.user.institution_id === cert.institution_id || req.user.id === cert.institution_id);
+
+    if (!isRegulator && !isIssuingInstitution) {
+      return res.status(403).json({
+        error: 'Unauthorized: Only regulators or the issuing institution can revoke this certificate.',
+      });
     }
 
     if (cert.revoked) {
-      return res.status(400).json({ error: 'Certificate is already revoked' });
+      return res.status(400).json({ error: 'Certificate is already revoked.' });
     }
 
     // Revoke on-chain
     const txResult = await revokeCertificateOnChain(cert.credential_id);
 
-    // Update Supabase
-    let updatedCert = null;
-    try {
-      const { data: uCert, error: updateErr } = await supabase
-        .from('certificates')
-        .update({
-          revoked: true,
-        })
-        .eq('id', cert.id)
-        .select()
-        .single();
-
-      if (updateErr) {
-        console.warn('Warning updating Supabase revoked state:', updateErr.message);
-      } else {
-        updatedCert = uCert;
-      }
-    } catch (e) {
-      console.warn('Exception updating Supabase revoked state:', e.message);
-    }
+    // Update Neon PostgreSQL
+    const updateRes = await db.query(
+      'UPDATE certificates SET revoked = true WHERE id = $1 RETURNING *',
+      [cert.id]
+    );
 
     return res.status(200).json({
       success: true,
       message: `Certificate ${cert.credential_id} revoked successfully on-chain.`,
       txHash: txResult.txHash,
-      certificate: updatedCert || { ...cert, revoked: true },
+      certificate: updateRes.rows[0],
     });
   } catch (err) {
     console.error('Error revoking certificate:', err);

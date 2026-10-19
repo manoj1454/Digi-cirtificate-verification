@@ -24,6 +24,39 @@ import { shouldUse3DHero } from '../lib/deviceDetection';
 // Code-split Three.js / React Three Fiber liquid scene so it only loads on this route
 const XypherLiquidScene = lazy(() => import('../components/XypherLiquidScene'));
 
+// Standard Demo Accounts configured for one-click evaluation
+export const DEMO_ACCOUNTS = {
+  regulator: {
+    email: 'demo.regulator@xypher.demo',
+    title: 'Regulator',
+  },
+  institution: {
+    email: 'demo.institution@xypher.demo',
+    title: 'Institution',
+  },
+  student: {
+    email: 'demo.student@xypher.demo',
+    title: 'Student',
+  },
+  company: {
+    email: 'demo.company@xypher.demo',
+    title: 'Company',
+  },
+};
+
+/**
+ * Retrieve demo password from Vite environment variables (VITE_ prefix required for browser visibility)
+ * Supports role-specific overrides (e.g. VITE_DEMO_REGULATOR_PASSWORD) or fallback VITE_DEMO_PASSWORD.
+ */
+export const getDemoPasswordForRole = (roleId) => {
+  const roleUpper = roleId.toUpperCase();
+  return (
+    import.meta.env[`VITE_DEMO_${roleUpper}_PASSWORD`] ||
+    import.meta.env.VITE_DEMO_PASSWORD ||
+    ''
+  );
+};
+
 export const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -31,6 +64,7 @@ export const AuthPage = () => {
   const [selectedRole, setSelectedRole] = useState('student');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [demoNotice, setDemoNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authState, setAuthState] = useState('idle'); // 'idle' | 'authenticating' | 'verified' | 'error'
 
@@ -256,30 +290,41 @@ export const AuthPage = () => {
     }
   };
 
-  const handleDemoLogin = async (roleId) => {
-    const prefersReducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    setAuthState('authenticating');
+  /**
+   * Handle Role Card Click:
+   * 1. Updates the active selected role.
+   * 2. In Sign-In mode, automatically populates email and configured demo password.
+   * 3. Does NOT automatically submit or log in.
+   * 4. If demo password is not configured, provides a helpful explanation.
+   */
+  const handleRoleCardClick = (roleId) => {
+    setSelectedRole(roleId);
     setErrorMsg('');
-    try {
-      loginAsDemoRole(roleId);
-      setAuthState('verified');
 
-      if (prefersReducedMotion) {
-        navigate(getDashboardPath(roleId));
-      } else {
-        await new Promise((r) => setTimeout(r, 650));
-        navigate(getDashboardPath(roleId));
+    if (!isSignUp) {
+      const demoAccount = DEMO_ACCOUNTS[roleId];
+      if (demoAccount) {
+        setEmail(demoAccount.email);
+        const configuredPassword = getDemoPasswordForRole(roleId);
+        if (configuredPassword) {
+          setPassword(configuredPassword);
+          setDemoNotice(
+            `Demo credentials loaded for ${demoAccount.title}. Click "Sign In to Dashboard" to log in.`
+          );
+        } else {
+          setPassword('');
+          setDemoNotice(
+            `Demo email populated (${demoAccount.email}). Demo password is not configured in environment variables (VITE_DEMO_PASSWORD). Please enter password manually.`
+          );
+        }
       }
-    } catch (err) {
-      setAuthState('error');
-      setErrorMsg(err.message || 'Demo authentication failed.');
-      setTimeout(() => {
-        setAuthState('idle');
-      }, 600);
     }
+  };
+
+  const handleDemoPillClick = (roleId) => {
+    setIsSignUp(false);
+    handleRoleCardClick(roleId);
+    handleScrollToAuth();
   };
 
   return (
@@ -420,14 +465,14 @@ export const AuthPage = () => {
                   <span>Instant Role Preview Available</span>
                 </div>
                 <p className="setup-notice-text">
-                  Instant preview for evaluation and testing. Select any role below for one-click verification:
+                  Instant preview for evaluation and testing. Select any role below to autofill the login form:
                 </p>
                 <div className="demo-pills-row">
                   {rolesList.map((r) => (
                     <button
                       key={r.id}
                       type="button"
-                      onClick={() => handleDemoLogin(r.id)}
+                      onClick={() => handleDemoPillClick(r.id)}
                       className={`demo-pill ${r.colorClass}`}
                       id={`demo-pill-${r.id}`}
                       disabled={isSubmitting || authState === 'verified'}
@@ -457,6 +502,7 @@ export const AuthPage = () => {
                   onClick={() => {
                     setIsSignUp(false);
                     setErrorMsg('');
+                    setDemoNotice('');
                   }}
                   disabled={isSubmitting || authState === 'verified'}
                 >
@@ -471,6 +517,7 @@ export const AuthPage = () => {
                   onClick={() => {
                     setIsSignUp(true);
                     setErrorMsg('');
+                    setDemoNotice('');
                   }}
                   disabled={isSubmitting || authState === 'verified'}
                 >
@@ -489,6 +536,12 @@ export const AuthPage = () => {
                 <div className="alert-box alert-success" role="status">
                   <CheckCircle2 size={16} />
                   <span>{successMsg}</span>
+                </div>
+              )}
+              {demoNotice && !errorMsg && !successMsg && (
+                <div className="alert-box alert-info" role="status" id="demo-autofill-banner">
+                  <Sparkles size={16} />
+                  <span>{demoNotice}</span>
                 </div>
               )}
 
@@ -515,7 +568,7 @@ export const AuthPage = () => {
                           aria-checked={isSelected}
                           tabIndex={0}
                           className={`role-tile ${isSelected ? 'selected' : ''}`}
-                          onClick={() => setSelectedRole(r.id)}
+                          onClick={() => handleRoleCardClick(r.id)}
                           disabled={isSubmitting || authState === 'verified'}
                         >
                           <div className="role-tile-header">
@@ -630,7 +683,10 @@ export const AuthPage = () => {
                       required
                       placeholder="name@organization.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setDemoNotice('');
+                      }}
                       className="glass-input-field"
                       disabled={isSubmitting || authState === 'verified'}
                     />
@@ -651,7 +707,10 @@ export const AuthPage = () => {
                       minLength={6}
                       placeholder="••••••••••••"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setDemoNotice('');
+                      }}
                       className="glass-input-field"
                       disabled={isSubmitting || authState === 'verified'}
                     />

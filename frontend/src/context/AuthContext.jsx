@@ -12,31 +12,92 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
 
-  // Fetch role and profile for an authenticated user
-  const fetchUserProfile = async (userId, fallbackRole = null) => {
+  const rawApiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
+  const apiUrl = rawApiUrl.replace(/\/+$/, '');
+
+  // Helper to obtain current Supabase session access token
+  const getAccessToken = async () => {
+    if (!isSupabaseConfigured) return null;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token || null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  // Synchronize profile to Neon PostgreSQL via Express API
+  const syncUserProfile = async (profileData, token = null) => {
+    try {
+      const authToken = token || (await getAccessToken());
+      if (!authToken) return null;
+
+      const res = await fetch(`${apiUrl}/api/users/profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(profileData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          setRole(data.role || data.profile.role);
+          setProfile(data.profile);
+          return data;
+        }
+      }
+    } catch (err) {
+      console.warn('Profile synchronization via Express API warning:', err);
+    }
+    return null;
+  };
+
+  // Fetch role and profile for an authenticated user via Express API (Neon backend)
+  const fetchUserProfile = async (userId, fallbackRole = null, token = null, userMeta = {}) => {
     if (!isSupabaseConfigured) {
       setRole(fallbackRole || 'student');
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) {
-        console.warn('Could not fetch public.users record:', error.message);
+      const authToken = token || (await getAccessToken());
+      if (!authToken) {
         if (fallbackRole) setRole(fallbackRole);
-      } else if (data) {
-        setRole(data.role);
-        setProfile(data);
-      } else if (fallbackRole) {
-        setRole(fallbackRole);
+        return;
       }
+
+      const res = await fetch(`${apiUrl}/api/users/me`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          setRole(data.role || data.profile.role);
+          setProfile(data.profile);
+          return data;
+        } else if (data.needsProfileInit) {
+          // Profile not yet in Neon (e.g. initial login after asynchronous email confirmation)
+          const syncPayload = {
+            role: fallbackRole || userMeta.role || 'student',
+            fullName: userMeta.fullName || userMeta.full_name,
+            institutionName: userMeta.institutionName,
+            registrationNumber: userMeta.registrationNumber,
+            rollNumber: userMeta.rollNumber,
+            institutionId: userMeta.institution_id || userMeta.institutionId,
+          };
+          return await syncUserProfile(syncPayload, authToken);
+        }
+      }
+
+      if (fallbackRole) setRole(fallbackRole);
     } catch (err) {
-      console.error('Error in fetchUserProfile:', err);
+      console.error('Error in fetchUserProfile via API:', err);
       if (fallbackRole) setRole(fallbackRole);
     }
   };
@@ -70,7 +131,12 @@ export const AuthProvider = ({ children }) => {
         if (session?.user) {
           setUser(session.user);
           const metaRole = session.user.user_metadata?.role;
-          await fetchUserProfile(session.user.id, metaRole);
+          await fetchUserProfile(
+            session.user.id,
+            metaRole,
+            session.access_token,
+            session.user.user_metadata || {}
+          );
         }
       } catch (err) {
         console.error('Session initialization error:', err);
@@ -88,7 +154,12 @@ export const AuthProvider = ({ children }) => {
         if (session?.user) {
           setUser(session.user);
           const metaRole = session.user.user_metadata?.role;
-          await fetchUserProfile(session.user.id, metaRole);
+          await fetchUserProfile(
+            session.user.id,
+            metaRole,
+            session.access_token,
+            session.user.user_metadata || {}
+          );
         } else if (!localStorage.getItem('veriCert_demo_role')) {
           setUser(null);
           setRole(null);
@@ -103,7 +174,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // Sign Up with Supabase Auth
+  // Sign Up with Supabase Auth + Neon Profile synchronization via Express API
   const signUp = async (email, password, selectedRole, extraData = {}) => {
     if (!isSupabaseConfigured) {
       throw new Error(
@@ -125,43 +196,24 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
 
     if (data?.user) {
-      // In case database trigger isn't applied yet, try explicit insert into public.users
-      try {
-        await supabase.from('users').upsert({
-          id: data.user.id,
-          email,
-          role: selectedRole,
-        });
-
-        // Insert role-specific profile row
-        if (selectedRole === 'institution' && extraData.institutionName) {
-          const { data: instData } = await supabase.from('institutions').upsert({
-            user_id: data.user.id,
-            name: extraData.institutionName,
-            registration_number: extraData.registrationNumber || 'PENDING-REG',
-            status: 'pending',
-          }).select().maybeSingle();
-
-          if (instData?.id) {
-            try {
-              await supabase.from('users').update({ institution_id: instData.id }).eq('id', data.user.id);
-            } catch (e) {}
-          }
-        } else if (selectedRole === 'student' && extraData.fullName) {
-          // If institutionId is available, connect it; otherwise placeholder
-          await supabase.from('students').upsert({
-            user_id: data.user.id,
-            full_name: extraData.fullName,
-            roll_number: extraData.rollNumber || 'PENDING-ROLL',
-            institution_id: extraData.institutionId || null,
-          });
-        }
-      } catch (insertErr) {
-        console.warn('Initial profile sync warning (trigger may handle this):', insertErr);
-      }
-
       setUser(data.user);
       setRole(selectedRole);
+
+      // If session is immediately available (auto-confirm enabled), sync profile with Neon now
+      if (data.session?.access_token) {
+        await syncUserProfile(
+          {
+            role: selectedRole,
+            fullName: extraData.fullName,
+            institutionName: extraData.institutionName,
+            registrationNumber: extraData.registrationNumber,
+            rollNumber: extraData.rollNumber,
+            institutionId: extraData.institutionId,
+          },
+          data.session.access_token
+        );
+      }
+      // If email confirmation is required and no session yet, profile will automatically sync on first signIn
     }
 
     return data;
@@ -185,7 +237,12 @@ export const AuthProvider = ({ children }) => {
     if (data?.user) {
       setUser(data.user);
       const metaRole = data.user.user_metadata?.role;
-      await fetchUserProfile(data.user.id, metaRole);
+      await fetchUserProfile(
+        data.user.id,
+        metaRole,
+        data.session?.access_token,
+        data.user.user_metadata || {}
+      );
     }
 
     return data;
@@ -243,6 +300,7 @@ export const AuthProvider = ({ children }) => {
     signOut,
     loginAsDemoRole,
     getDashboardPath,
+    syncUserProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

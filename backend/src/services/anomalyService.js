@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { supabase } = require('../config/supabase');
+const db = require('../config/database');
 
 const dataDir = path.resolve(__dirname, '../../data');
 const fallbackFile = path.join(dataDir, 'anomaly_flags.json');
@@ -31,100 +31,117 @@ function writeFallback(records) {
 /**
  * Checks if an institution has exceeded the hourly issuance threshold.
  * Configurable via ISSUANCE_HOURLY_THRESHOLD (default 20).
- * Does not block issuance; logs clear warning and stores alert in anomaly_flags.
+ * Queries Neon PostgreSQL certificates table and logs anomaly to anomaly_flags.
  */
 async function checkIssuanceAnomaly(institutionId) {
   const threshold = parseInt(process.env.ISSUANCE_HOURLY_THRESHOLD || '20', 10);
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  let currentCount = 0;
 
-  try {
-    const { count, error } = await supabase
-      .from('certificates')
-      .select('*', { count: 'exact', head: true })
-      .eq('institution_id', institutionId)
-      .gte('created_at', oneHourAgo);
-
-    const currentCount = typeof count === 'number' ? count : 0;
-
-    if (currentCount >= threshold) {
-      const anomaly = {
-        id: `anomaly-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        institution_id: institutionId,
-        event_type: 'excessive_issuance',
-        count: currentCount,
-        threshold: threshold,
-        window_hours: 1,
-        details: {
-          message: `Institution issued ${currentCount} certificates within the last hour (threshold: ${threshold})`,
-          detected_at: new Date().toISOString(),
-        },
-        created_at: new Date().toISOString(),
-      };
-
-      console.warn(
-        `⚠️ [SECURITY ANOMALY DETECTED] Institution ${institutionId} exceeded issuance threshold: ${currentCount}/${threshold} in last 1 hr.`
+  if (db.isConfigured) {
+    try {
+      const countRes = await db.query(
+        `SELECT COUNT(*)::int AS total
+         FROM certificates
+         WHERE institution_id = $1 AND created_at >= $2`,
+        [institutionId, oneHourAgo]
       );
-
-      // Store in queryable file-based storage
-      const fallbackRecords = readFallback();
-      fallbackRecords.unshift(anomaly);
-      if (fallbackRecords.length > 200) fallbackRecords.pop();
-      writeFallback(fallbackRecords);
-
-      // Store in Supabase table (if table exists)
-      try {
-        await supabase.from('anomaly_flags').insert({
-          institution_id: anomaly.institution_id,
-          event_type: anomaly.event_type,
-          count: anomaly.count,
-          threshold: anomaly.threshold,
-          window_hours: anomaly.window_hours,
-          details: anomaly.details,
-        });
-      } catch (dbErr) {
-        console.warn('Note: Could not persist anomaly to Supabase anomaly_flags table:', dbErr.message);
-      }
-
-      return anomaly;
+      currentCount = countRes.rows[0]?.total || 0;
+    } catch (err) {
+      console.warn('[AnomalyService] Error querying certificate issuance velocity from Neon:', err.message);
     }
-  } catch (err) {
-    console.warn('Error during anomaly check:', err.message);
   }
+
+  if (currentCount >= threshold) {
+    const anomaly = {
+      id: `anomaly-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      institution_id: institutionId,
+      flag_type: 'excessive_issuance',
+      event_type: 'excessive_issuance',
+      count: currentCount,
+      threshold,
+      window_hours: 1,
+      severity: 'WARNING',
+      details: {
+        message: `Institution issued ${currentCount} certificates within the last hour (threshold: ${threshold})`,
+        detected_at: new Date().toISOString(),
+      },
+      created_at: new Date().toISOString(),
+    };
+
+    console.warn(
+      `⚠️ [SECURITY ANOMALY DETECTED] Institution ${institutionId} exceeded issuance threshold: ${currentCount}/${threshold} in last 1 hr.`
+    );
+
+    // Save to Neon anomaly_flags table
+    if (db.isConfigured) {
+      try {
+        const insertRes = await db.query(
+          `INSERT INTO anomaly_flags (
+            institution_id, flag_type, event_type, count, threshold,
+            window_hours, details, severity, created_at, timestamp
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()
+          ) RETURNING *`,
+          [
+            anomaly.institution_id,
+            anomaly.flag_type,
+            anomaly.event_type,
+            anomaly.count,
+            anomaly.threshold,
+            anomaly.window_hours,
+            JSON.stringify(anomaly.details),
+            anomaly.severity,
+          ]
+        );
+        return insertRes.rows[0];
+      } catch (dbErr) {
+        console.warn('Could not persist anomaly to Neon anomaly_flags:', dbErr.message);
+      }
+    }
+
+    // Dev Fallback storage
+    const fallbackRecords = readFallback();
+    fallbackRecords.unshift(anomaly);
+    if (fallbackRecords.length > 200) fallbackRecords.pop();
+    writeFallback(fallbackRecords);
+
+    return anomaly;
+  }
+
   return null;
 }
 
 /**
- * Query anomaly flags for an institution or all institutions.
+ * Query anomaly flags for an institution or all institutions from Neon.
  */
 async function getAnomalyFlags(institutionId = null) {
   let dbAnomalies = [];
-  try {
-    let query = supabase.from('anomaly_flags').select('*').order('created_at', { ascending: false });
-    if (institutionId) {
-      query = query.eq('institution_id', institutionId);
-    }
-    const { data, error } = await query;
-    if (!error && data) {
-      dbAnomalies = data;
-    }
-  } catch (e) {}
 
-  // Read fallback storage
-  const fileAnomalies = readFallback();
+  if (db.isConfigured) {
+    try {
+      let queryText = `SELECT * FROM anomaly_flags`;
+      let params = [];
 
-  // Merge with fallback anomalies
-  const combined = [...dbAnomalies];
-  const seenIds = new Set(dbAnomalies.map((a) => a.id));
-
-  for (const item of fileAnomalies) {
-    if (!institutionId || item.institution_id === institutionId) {
-      if (!seenIds.has(item.id)) {
-        combined.push(item);
+      if (institutionId) {
+        queryText += ` WHERE institution_id = $1`;
+        params.push(institutionId);
       }
+      queryText += ` ORDER BY created_at DESC LIMIT 100`;
+
+      const result = await db.query(queryText, params);
+      dbAnomalies = result.rows;
+      return dbAnomalies;
+    } catch (e) {
+      console.warn('[AnomalyService] Error reading anomaly_flags from Neon:', e.message);
     }
   }
 
-  return combined.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  // Fallback storage in non-production
+  const fileAnomalies = readFallback();
+  return fileAnomalies
+    .filter((a) => !institutionId || a.institution_id === institutionId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
 module.exports = {

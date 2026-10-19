@@ -164,38 +164,42 @@ async function uploadPdfToPinata(filename, buffer) {
   }
 }
 
+const db = require('../backend/src/config/database');
+
 async function main() {
+  if (process.env.ALLOW_DESTRUCTIVE_RESEED !== 'true') {
+    console.error('\n❌ SAFETY ERROR: Destructive reseed aborted.');
+    console.error('This script wipes and reseeds demo application tables.');
+    console.error('To run in a designated development environment, execute with:');
+    console.error('  ALLOW_DESTRUCTIVE_RESEED=true node scripts/reseed-clean-demo-data.js\n');
+    process.exit(1);
+  }
+
   console.log('====================================================');
-  console.log('VeriCert: Wiping & Reseeding Clean Demo Data');
+  console.log('XYPHER: Wiping & Reseeding Clean Demo Data (Neon + Supabase Auth)');
   console.log('====================================================\n');
 
-  // STEP 1: WIPE EXISTING DATABASE RECORDS
-  console.log('[1/6] Purging all existing database records...');
+  // STEP 1: WIPE EXISTING DATABASE RECORDS IN NEON
+  console.log('[1/6] Purging all existing database records in Neon...');
 
-  const safeDelete = async (table) => {
+  if (db.isConfigured) {
     try {
-      const { error } = await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error && !error.message?.includes('Could not find the table') && !error.message?.includes('schema cache')) {
-        console.warn(`   ⚠ [Purge warning] ${table}:`, error.message);
-      }
+      await db.query('UPDATE users SET institution_id = NULL');
+      await db.query('DELETE FROM anomaly_flags');
+      await db.query('DELETE FROM verification_logs');
+      await db.query('DELETE FROM certificates');
+      await db.query('DELETE FROM pending_certificates');
+      await db.query('DELETE FROM students');
+      await db.query('DELETE FROM institution_staff');
+      await db.query('DELETE FROM institutions');
+      await db.query('DELETE FROM users');
+      console.log('   ✔ All Neon table records deleted.');
     } catch (e) {
-      // Ignore if table does not exist
+      console.warn('   ⚠ [Neon purge warning]:', e.message);
     }
-  };
-
-  // Nullify foreign keys on users first to avoid circular FK constraints
-  try {
-    await supabase.from('users').update({ institution_id: null }).neq('id', '00000000-0000-0000-0000-000000000000');
-  } catch (_) {}
-
-  await safeDelete('anomaly_flags');
-  await safeDelete('verification_logs');
-  await safeDelete('certificates');
-  await safeDelete('pending_certificates');
-  await safeDelete('students');
-  await safeDelete('institutions');
-  await safeDelete('users');
-  console.log('   ✔ All table records deleted.');
+  } else {
+    console.log('   ℹ Neon database not configured; skipping SQL table wipe.');
+  }
 
   console.log('[2/6] Purging all Supabase Auth users...');
   let hasMore = true;
@@ -223,11 +227,14 @@ async function main() {
     user_metadata: { role: 'regulator', full_name: 'Educational Regulator Authority' },
   });
   if (regErr) throw regErr;
-  await supabase.from('users').upsert({
-    id: regUser.user.id,
-    email: 'regulator@demo.com',
-    role: 'regulator',
-  });
+  if (db.isConfigured) {
+    await db.query(
+      `INSERT INTO users (id, email, role, full_name, updated_at)
+       VALUES ($1, $2, 'regulator', 'Educational Regulator Authority', NOW())
+       ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role`,
+      [regUser.user.id, 'regulator@demo.com']
+    );
+  }
   console.log('   ✔ Regulator account created: regulator@demo.com');
 
   // Company
@@ -238,11 +245,14 @@ async function main() {
     user_metadata: { role: 'company', full_name: 'Enterprise Credential Verifier' },
   });
   if (compErr) throw compErr;
-  await supabase.from('users').upsert({
-    id: compUser.user.id,
-    email: 'company@demo.com',
-    role: 'company',
-  });
+  if (db.isConfigured) {
+    await db.query(
+      `INSERT INTO users (id, email, role, full_name, updated_at)
+       VALUES ($1, $2, 'company', 'Enterprise Credential Verifier', NOW())
+       ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role`,
+      [compUser.user.id, 'company@demo.com']
+    );
+  }
   console.log('   ✔ Company verifier created: company@demo.com\n');
 
   // STEP 3: CONFIGURE INSTITUTIONS SPECIFICATION
@@ -416,24 +426,42 @@ async function main() {
 
     // Step B: Create Institution in Database
     const initialStatus = spec.status === 'pending' ? 'pending' : 'approved';
-    const { data: instData, error: instErr } = await supabase.from('institutions').insert({
-      user_id: s1User.user.id,
-      name: spec.name,
-      registration_number: spec.regNumber,
-      status: initialStatus,
-      approved_at: initialStatus === 'approved' ? new Date().toISOString() : null,
-    }).select().single();
-    if (instErr) throw instErr;
+    let institutionId = null;
 
-    const institutionId = instData.id;
+    if (db.isConfigured) {
+      const instRes = await db.query(
+        `INSERT INTO institutions (user_id, name, registration_number, status, approved_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING *`,
+        [
+          s1User.user.id,
+          spec.name,
+          spec.regNumber,
+          initialStatus,
+          initialStatus === 'approved' ? new Date().toISOString() : null,
+        ]
+      );
+      institutionId = instRes.rows[0].id;
 
-    // Link Staff 1 to institution
-    await supabase.from('users').upsert({
-      id: s1User.user.id,
-      email: spec.staff1.email,
-      role: 'institution',
-      institution_id: institutionId,
-    });
+      // Link Staff 1 to institution
+      await db.query(
+        `INSERT INTO users (id, email, role, full_name, institution_id, updated_at)
+         VALUES ($1, $2, 'institution', $3, $4, NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           role = 'institution',
+           institution_id = EXCLUDED.institution_id`,
+        [s1User.user.id, spec.staff1.email, spec.staff1.name, institutionId]
+      );
+
+      await db.query(
+        `INSERT INTO institution_staff (institution_id, user_id, role)
+         VALUES ($1, $2, 'admin')
+         ON CONFLICT (institution_id, user_id) DO NOTHING`,
+        [institutionId, s1User.user.id]
+      );
+    } else {
+      institutionId = require('crypto').randomUUID();
+    }
     console.log(`   ✔ Staff 1 registered: ${spec.staff1.email} (${spec.staff1.name})`);
 
     // Step C: Invite / Register Staff 2 (Registrar)
@@ -445,12 +473,23 @@ async function main() {
     });
     if (s2Err) throw s2Err;
 
-    await supabase.from('users').upsert({
-      id: s2User.user.id,
-      email: spec.staff2.email,
-      role: 'institution',
-      institution_id: institutionId,
-    });
+    if (db.isConfigured) {
+      await db.query(
+        `INSERT INTO users (id, email, role, full_name, institution_id, updated_at)
+         VALUES ($1, $2, 'institution', $3, $4, NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           role = 'institution',
+           institution_id = EXCLUDED.institution_id`,
+        [s2User.user.id, spec.staff2.email, spec.staff2.name, institutionId]
+      );
+
+      await db.query(
+        `INSERT INTO institution_staff (institution_id, user_id, role)
+         VALUES ($1, $2, 'staff')
+         ON CONFLICT (institution_id, user_id) DO NOTHING`,
+        [institutionId, s2User.user.id]
+      );
+    }
     console.log(`   ✔ Staff 2 registered: ${spec.staff2.email} (${spec.staff2.name})`);
 
     // Step D: On-Chain Registration if approved
@@ -482,21 +521,26 @@ async function main() {
       });
       if (studErr) throw studErr;
 
-      // 2. Insert into public.students
-      const { data: studentRow, error: studentRowErr } = await supabase.from('students').insert({
-        user_id: studAuth.user.id,
-        institution_id: institutionId,
-        full_name: studentSpec.name,
-        roll_number: studentSpec.roll,
-      }).select().single();
-      if (studentRowErr) throw studentRowErr;
+      // 2. Insert into students table in Neon
+      let studentId = require('crypto').randomUUID();
+      if (db.isConfigured) {
+        await db.query(
+          `INSERT INTO users (id, email, role, full_name, institution_id, updated_at)
+           VALUES ($1, $2, 'student', $3, $4, NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             role = 'student',
+             institution_id = EXCLUDED.institution_id`,
+          [studAuth.user.id, studentSpec.email, studentSpec.name, institutionId]
+        );
 
-      await supabase.from('users').upsert({
-        id: studAuth.user.id,
-        email: studentSpec.email,
-        role: 'student',
-        institution_id: institutionId,
-      });
+        const studRes = await db.query(
+          `INSERT INTO students (user_id, institution_id, full_name, roll_number)
+           VALUES ($1, $2, $3, $4)
+           RETURNING *`,
+          [studAuth.user.id, institutionId, studentSpec.name, studentSpec.roll]
+        );
+        studentId = studRes.rows[0].id;
+      }
 
       console.log(`   ✔ Student registered: ${studentSpec.name} (${studentSpec.email})`);
 
@@ -534,20 +578,26 @@ async function main() {
         }
       }
 
-      // 5. Insert into public.certificates
-      const { error: certInsertErr } = await supabase.from('certificates').insert({
-        credential_id: studentSpec.cert.id,
-        student_id: studentRow.id,
-        institution_id: institutionId,
-        degree_name: studentSpec.cert.degree,
-        issue_date: studentSpec.cert.date,
-        ipfs_hash: ipfsCid,
-        on_chain_tx_hash: onChainTxHash,
-        revoked: false,
-      });
-      if (certInsertErr) {
-        console.error(`   ❌ Failed to insert certificate ${studentSpec.cert.id}:`, certInsertErr);
-        throw certInsertErr;
+      // 5. Insert into certificates table in Neon
+      if (db.isConfigured) {
+        await db.query(
+          `INSERT INTO certificates (
+            credential_id, student_id, institution_id, degree_name,
+            issue_date, ipfs_hash, on_chain_tx_hash, revoked, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW())
+          ON CONFLICT (credential_id) DO UPDATE SET
+            on_chain_tx_hash = EXCLUDED.on_chain_tx_hash,
+            ipfs_hash = EXCLUDED.ipfs_hash`,
+          [
+            studentSpec.cert.id,
+            studentId,
+            institutionId,
+            studentSpec.cert.degree,
+            studentSpec.cert.date,
+            ipfsCid,
+            onChainTxHash,
+          ]
+        );
       }
 
       certsIssued.push({
@@ -563,7 +613,12 @@ async function main() {
       const nonce = await getFreshNonce();
       const revokeTx = await registryContract.updateAccreditationStatus(institutionId, false, { nonce });
       await revokeTx.wait();
-      await supabase.from('institutions').update({ status: 'revoked' }).eq('id', institutionId);
+      if (db.isConfigured) {
+        await db.query(
+          `UPDATE institutions SET status = 'rejected' WHERE id = $1`,
+          [institutionId]
+        );
+      }
       console.log(`   ✔ Accreditation revoked on-chain! Tx: ${revokeTx.hash.slice(0, 14)}...`);
     }
 
