@@ -258,5 +258,93 @@ describe("Certificate Verification Platform Smart Contracts", function () {
         expect(verification.ipfsHash).to.equal(IPFS_HASH);
       });
     });
+
+    describe("Explicit Audit Verification: Authorization & Accreditation Invariants", function () {
+      it("[E] Issuance must fail safely if the institution is not registered", async function () {
+        await expect(
+          certificateRegistry.connect(deployer).issueCertificate("cred-unreg-1", "unregistered-inst", IPFS_HASH)
+        ).to.be.revertedWith("Institution is not accredited");
+      });
+
+      it("[F] Issuance must fail safely if the institution is registered but unaccredited", async function () {
+        const UNACC_ID = "inst-revoked-001";
+        await registry.connect(deployer).addInstitute(UNACC_ID, "Revoked University");
+        await registry.connect(deployer).updateAccreditationStatus(UNACC_ID, false);
+        expect(await registry.isAccredited(UNACC_ID)).to.be.false;
+
+        await expect(
+          certificateRegistry.connect(deployer).issueCertificate("cred-unacc-1", UNACC_ID, IPFS_HASH)
+        ).to.be.revertedWith("Institution is not accredited");
+      });
+
+      it("[G] An unauthorized caller cannot accredit or register an institution", async function () {
+        const FAKE_INST = "inst-fake-001";
+        await expect(
+          registry.connect(unauthorizedUser).addInstitute(FAKE_INST, "Fake Institute")
+        ).to.be.revertedWithCustomError(registry, "AccessControlUnauthorizedAccount");
+
+        await expect(
+          registry.connect(unauthorizedUser).updateAccreditationStatus(INST_ID, true)
+        ).to.be.revertedWithCustomError(registry, "AccessControlUnauthorizedAccount");
+      });
+
+      it("[H] An authorized regulator/operator can explicitly approve accreditation", async function () {
+        const NEW_INST = "inst-cambridge-002";
+        await registry.connect(deployer).addInstitute(NEW_INST, "Cambridge University");
+        expect(await registry.isAccredited(NEW_INST)).to.be.true;
+
+        // Toggle accreditation off and on explicitly
+        await registry.connect(deployer).updateAccreditationStatus(NEW_INST, false);
+        expect(await registry.isAccredited(NEW_INST)).to.be.false;
+
+        await registry.connect(deployer).updateAccreditationStatus(NEW_INST, true);
+        expect(await registry.isAccredited(NEW_INST)).to.be.true;
+      });
+
+      it("[I] Certificate issuance succeeds only after valid accreditation", async function () {
+        const VALID_INST = "inst-valid-003";
+        const VALID_CRED = "cred-valid-003";
+
+        // Reverts prior to accreditation
+        await expect(
+          certificateRegistry.connect(deployer).issueCertificate(VALID_CRED, VALID_INST, IPFS_HASH)
+        ).to.be.revertedWith("Institution is not accredited");
+
+        // Explicitly accredit
+        await registry.connect(deployer).addInstitute(VALID_INST, "Valid Accredited University");
+
+        // Now issuance succeeds
+        await expect(
+          certificateRegistry.connect(deployer).issueCertificate(VALID_CRED, VALID_INST, IPFS_HASH)
+        ).to.emit(certificateRegistry, "CertificateIssued");
+
+        const certData = await certificateRegistry.verifyCertificate(VALID_CRED);
+        expect(certData.ipfsHash).to.equal(IPFS_HASH);
+        expect(certData.revoked).to.be.false;
+        expect(certData.isInstituteAccredited).to.be.true;
+      });
+
+      it("[J] Existing verification and revocation invariants remain fully intact", async function () {
+        const CERT_J_ID = "cred-j-004";
+        await registry.connect(deployer).addInstitute("inst-j-004", "J Institute");
+        await certificateRegistry.connect(deployer).issueCertificate(CERT_J_ID, "inst-j-004", IPFS_HASH);
+
+        // Verification initially valid
+        let cert = await certificateRegistry.verifyCertificate(CERT_J_ID);
+        expect(cert.revoked).to.be.false;
+        expect(cert.isInstituteAccredited).to.be.true;
+
+        // Revocation works
+        await certificateRegistry.connect(deployer).revokeCertificate(CERT_J_ID);
+        cert = await certificateRegistry.verifyCertificate(CERT_J_ID);
+        expect(cert.revoked).to.be.true;
+
+        // Cannot double-revoke
+        await expect(
+          certificateRegistry.connect(deployer).revokeCertificate(CERT_J_ID)
+        ).to.be.revertedWith("Certificate already revoked");
+      });
+    });
   });
 });
+

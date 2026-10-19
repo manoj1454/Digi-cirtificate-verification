@@ -53,6 +53,18 @@ async function runTest() {
     console.log(` - Staff 2 (Approver) : ${STAFF_2_ID}`);
     console.log(` - Target Credential ID: ${testCredId}`);
 
+    // Explicit on-chain accreditation prerequisite (auto-accreditation removed for security)
+    const { addInstitutionOnChain, isInstitutionAccreditedOnChain } = require('../src/config/blockchain');
+    try {
+      const isAcc = await isInstitutionAccreditedOnChain(TEST_INSTITUTION_ID);
+      if (!isAcc) {
+        await addInstitutionOnChain(TEST_INSTITUTION_ID, 'E2E Lifecycle University');
+        console.log(`   ✔ Explicitly accredited test institution [${TEST_INSTITUTION_ID}] on-chain`);
+      }
+    } catch (chainErr) {
+      console.log(`   Accreditation setup note: ${chainErr.message}`);
+    }
+
     // -------------------------------------------------------------------------
     // STEP 1: Staff 1 initiates a certificate upload
     // -------------------------------------------------------------------------

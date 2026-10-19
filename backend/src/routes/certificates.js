@@ -300,14 +300,16 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
         finalCertificate: finalizedDbRow,
       });
     } catch (chainErr) {
-      console.error('On-chain transaction failed:', chainErr);
+      console.error('On-chain transaction failed:', chainErr.message);
 
       await updatePendingCertificate(pendingCert.id, {
         status: 'failed',
         error_reason: chainErr.message,
       });
 
-      return res.status(500).json({
+      const statusCode = (chainErr.message?.includes('not accredited') || chainErr.message?.includes('Invalid')) ? 400 : 500;
+
+      return res.status(statusCode).json({
         success: false,
         error: 'On-chain certificate issuance failed.',
         status: 'failed',
