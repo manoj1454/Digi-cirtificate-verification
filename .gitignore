@@ -41,3 +41,6 @@ lerna-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# External references
+3d-landing-page-main/

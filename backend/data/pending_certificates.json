@@ -382,5 +382,21 @@
     "on_chain_tx_hash": null,
     "error_reason": null,
     "created_at": "2026-10-19T12:24:45.874Z"
+  },
+  {
+    "id": "393c3e30-8c9d-419e-aa0f-36c1b532e109",
+    "institution_id": "inst-001",
+    "student_id": "student-001",
+    "credential_id": "CRED-UNIT-655466",
+    "ipfs_cid": "bafkreiexamplecid123",
+    "sha256_hash": "0x1234567890abcdef",
+    "degree_name": "B.S. Artificial Intelligence",
+    "issue_date": "2026-10-19",
+    "created_by": "staff-initiator-001",
+    "approved_by": null,
+    "status": "pending_approval",
+    "on_chain_tx_hash": null,
+    "error_reason": null,
+    "created_at": "2026-10-19T14:04:17.846Z"
   }
 ]

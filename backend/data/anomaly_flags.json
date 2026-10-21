@@ -1,5 +1,20 @@
 [
   {
+    "id": "anomaly-1792418671519-omwm5",
+    "institution_id": "inst-test-anomaly",
+    "flag_type": "excessive_issuance",
+    "event_type": "excessive_issuance",
+    "count": 0,
+    "threshold": 0,
+    "window_hours": 1,
+    "severity": "WARNING",
+    "details": {
+      "message": "Institution issued 0 certificates within the last hour (threshold: 0)",
+      "detected_at": "2026-10-19T14:04:31.519Z"
+    },
+    "created_at": "2026-10-19T14:04:31.519Z"
+  },
+  {
     "id": "anomaly-1792412609995-ipxal",
     "institution_id": "inst-test-anomaly",
     "flag_type": "excessive_issuance",

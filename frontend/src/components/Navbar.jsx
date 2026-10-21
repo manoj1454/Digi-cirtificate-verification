@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, LogOut, UserCheck, Menu, X, ArrowRight, LayoutDashboard } from 'lucide-react';
+import { XypherSpinningLogo } from './XypherSpinningLogo';
 
 export const Navbar = () => {
   const { user, role, signOut, getDashboardPath } = useAuth();
@@ -55,28 +56,35 @@ export const Navbar = () => {
   const currentRoleMeta = roleColors[role] || { badge: 'badge-default', label: role || 'Guest' };
   const dashboardLink = role ? getDashboardPath(role) : '/login';
 
+  // Public XYPHER pages have their own dedicated, modern xypher-header
+  if (
+    location.pathname === '/' ||
+    location.pathname === '/verify' ||
+    location.pathname === '/login' ||
+    location.pathname === '/signup'
+  ) {
+    return null;
+  }
+
   return (
-    <header className="site-header" role="banner">
-      <div className="header-inner">
-        {/* Brand link */}
-        <div className="brand-section">
-          <Link to="/" className="brand-link" aria-label="XYPHER Home">
-            <div className="logo-icon-wrap">
-              <ShieldCheck className="logo-icon" size={24} />
-            </div>
-            <div className="brand-text">
-              <span className="brand-title">XYPHER</span>
-              <span className="brand-sub">Verify. Trust. Authenticate.</span>
-            </div>
+    <header className="proto-header site-header" role="banner">
+      <div className="nav">
+        {/* Brand logo */}
+        <div className="logo">
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'inherit', textDecoration: 'none' }}>
+            <XypherSpinningLogo size={28} />
+            <span style={{ fontWeight: 800, letterSpacing: '0.12em' }}>XYPHER</span>
           </Link>
         </div>
 
-        {/* Desktop Public Navigation Links */}
-        <nav className="desktop-nav-links" aria-label="Main Navigation">
-          <a href="/#hero" className="nav-link-item">Overview</a>
-          <a href="/#how-it-works" className="nav-link-item">How It Works</a>
-          <a href="/#features" className="nav-link-item">Features</a>
-          <a href="/#verify" className="nav-link-item">Verify</a>
+        {/* Desktop Navigation Links */}
+        <nav aria-label="Main Navigation">
+          <ul>
+            <li><Link to="/">Home</Link></li>
+            <li><a href="/#architecture">Architecture</a></li>
+            <li><Link to="/verify">Verify</Link></li>
+            <li><Link to="/login">Role Portals ▾</Link></li>
+          </ul>
         </nav>
 
         {/* Telemetry / Status pills */}
@@ -101,27 +109,24 @@ export const Navbar = () => {
         {/* User controls / Auth actions */}
         <div className="user-controls">
           {user ? (
-            <div className="user-logged-box">
-              <Link to={dashboardLink} className="xy-nav-dashboard-btn" title="Open Your Dashboard">
-                <LayoutDashboard size={15} />
-                <span>Dashboard</span>
+            <div className="user-logged-box" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Link to={dashboardLink} className="btn" title="Open Your Dashboard" style={{ padding: '10px 18px' }}>
+                Dashboard
               </Link>
               <div className="user-meta">
-                <span className="user-email" title={user.email}>{user.email}</span>
                 <span className={`role-badge ${currentRoleMeta.badge}`}>
                   <UserCheck size={13} className="badge-icon" />
                   {currentRoleMeta.label}
                 </span>
               </div>
-              <button onClick={handleLogout} className="logout-btn" title="Sign Out">
-                <LogOut size={16} />
-                <span className="logout-text">Logout</span>
+              <button onClick={handleLogout} className="btn" title="Sign Out" style={{ padding: '10px 16px', opacity: 0.8 }}>
+                Logout
               </button>
             </div>
           ) : (
             <div className="auth-nav-actions">
-              <Link to="/login" className="login-nav-btn">
-                <span>Sign In</span>
+              <Link to="/login" className="btn" id="nav-get-started-btn">
+                Get Started
               </Link>
             </div>
           )}
@@ -144,18 +149,15 @@ export const Navbar = () => {
       {mobileMenuOpen && (
         <div id="mobile-navigation-drawer" className="mobile-nav-drawer" role="navigation">
           <nav className="mobile-nav-links">
-            <a href="/#hero" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
+            <a href="/#overview" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
               Overview
             </a>
-            <a href="/#how-it-works" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
-              How It Works
+            <a href="/#architecture" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
+              Architecture
             </a>
-            <a href="/#features" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
-              Features
-            </a>
-            <a href="/#verify" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
+            <Link to="/verify" className="mobile-nav-item" onClick={() => setMobileMenuOpen(false)}>
               Verify a Certificate
-            </a>
+            </Link>
             <hr className="mobile-nav-divider" />
             {user ? (
               <>

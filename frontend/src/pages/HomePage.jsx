@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, lazy, Suspense } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { shouldUse3DHero } from '../lib/deviceDetection';
+import { IdentityWeaverFallback } from '../components/IdentityWeaverFallback';
+
+// Code-split 3D Hero so it loads instantly
+const IdentityWeaverScene = lazy(() => import('../components/IdentityWeaverScene'));
 import {
   ShieldCheck,
   Building2,
@@ -88,98 +93,33 @@ export const HomePage = () => {
     setCredentialId(sampleId);
   };
 
+  const navigate = useNavigate();
+  const canRender3D = shouldUse3DHero();
+
   return (
     <div className="xy-home-page xy-tech-background">
       {/* =========================================================================
-          1. Hero Section
+          1. Hero Section: Exact XYPHER Identity Weaver
           ========================================================================= */}
-      <section className="xy-hero xy-container" id="hero">
-        <div className="xy-hero__grid">
-          {/* Left Hero Content */}
-          <div className="xy-hero__content">
-            <div className="xy-eyebrow">
-              <span className="xy-eyebrow__dot" />
-              <span>TRUSTED CREDENTIAL VERIFICATION</span>
-            </div>
-
-            <h1 className="xy-hero__heading">
-              Trust Every Credential. Verify Every Achievement.
-            </h1>
-
-            <p className="xy-hero__description">
-              A modern platform for issuing, managing, and verifying academic credentials through a secure, auditable workflow. Engineered with cryptographic certainty for universities, students, employers, and educational regulators.
-            </p>
-
-            <div className="xy-hero__actions">
-              <Link to="/login" className="xy-button xy-button-primary">
-                <span>Explore the Platform</span>
-                <ArrowRight size={18} />
-              </Link>
-              <a href="#verify" className="xy-button xy-button-secondary">
-                <Search size={18} />
-                <span>Verify a Certificate</span>
-              </a>
-            </div>
-
-            {/* Quick Demo Access Bar */}
-            <div className="xy-hero__quick-roles">
-              <span className="xy-hero__roles-label">Role Portals:</span>
-              <div className="xy-hero__role-tags">
-                <Link to="/login" className="xy-role-tag"><ShieldCheck size={13} /> Regulator</Link>
-                <Link to="/login" className="xy-role-tag"><Building2 size={13} /> Institution</Link>
-                <Link to="/login" className="xy-role-tag"><GraduationCap size={13} /> Student</Link>
-                <Link to="/login" className="xy-role-tag"><Briefcase size={13} /> Company</Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Hero Visual: Futuristic Credential Hologram */}
-          <div className="xy-hero__visual" aria-hidden="true">
-            <div className="xy-credential-card-hologram">
-              <div className="xy-holo-header">
-                <div className="xy-holo-badge">
-                  <ShieldCheck size={18} className="xy-cyan-text" />
-                  <span>ON-CHAIN VERIFIED</span>
-                </div>
-                <div className="xy-holo-code">ID: CERT-89412-V</div>
-              </div>
-
-              <div className="xy-holo-body">
-                <div className="xy-holo-icon-wrap">
-                  <Award size={36} className="xy-cyan-bright" />
-                </div>
-                <div className="xy-holo-degree">Bachelor of Computer Science</div>
-                <div className="xy-holo-sub">Oxford Institute of Technology</div>
-
-                <div className="xy-holo-meta-grid">
-                  <div className="xy-holo-meta">
-                    <span className="label">Recipient</span>
-                    <span className="val">Alexandre V. Chen</span>
-                  </div>
-                  <div className="xy-holo-meta">
-                    <span className="label">Status</span>
-                    <span className="val xy-success-text">Active &bull; Valid</span>
-                  </div>
-                  <div className="xy-holo-meta">
-                    <span className="label">Accreditation</span>
-                    <span className="val">Govt. Board Certified</span>
-                  </div>
-                  <div className="xy-holo-meta">
-                    <span className="label">Integrity Hash</span>
-                    <span className="val mono">0x7f4b...92ce</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="xy-holo-footer">
-                <div className="xy-holo-hash-strip">
-                  <div className="pulse-indicator" />
-                  <span>Cryptographic Proof Anchored // Dual-Key Approval</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <section className="xy-homepage-hero-wrapper" id="hero-wrapper">
+        {canRender3D ? (
+          <Suspense fallback={<IdentityWeaverFallback />}>
+            <IdentityWeaverScene
+              eyebrow="DIGITAL IDENTITY"
+              heading="Credentials You Can Trust, Verified."
+              sub="Tamper-proof, blockchain-backed certificates that anyone can verify in seconds. Engineered with cryptographic certainty for universities, students, employers, and educational regulators."
+              btnText="Get Started"
+              onAccessPortal={() => navigate('/login')}
+              secondaryBtnText="Verify Certificate"
+              onSecondaryClick={() => {
+                const el = document.getElementById('verify');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+            />
+          </Suspense>
+        ) : (
+          <IdentityWeaverFallback />
+        )}
       </section>
 
       {/* =========================================================================

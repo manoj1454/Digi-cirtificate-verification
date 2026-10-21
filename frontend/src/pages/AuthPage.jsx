@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -16,12 +16,25 @@ import {
   Layers,
   Check,
   ChevronDown,
+  Menu,
+  X,
+  Cpu,
+  Database,
+  Server,
+  Activity,
+  FileCheck,
+  Network,
+  AlertTriangle,
 } from 'lucide-react';
+import { XypherArchitectureDiagram } from '../components/XypherArchitectureDiagram';
+import { Footer } from '../components/Footer';
 import { shouldUse3DHero } from '../lib/deviceDetection';
-import { HologramFallback } from '../components/HologramFallback';
+import { XypherSpinningLogo } from '../components/XypherSpinningLogo';
+import { XypherLedgerMatrixFallback } from '../components/XypherLedgerMatrixFallback';
+import './login-page.css';
 
-// Code-split 3D Credential Hologram Scene so it loads efficiently
-const CredentialHologramScene = lazy(() => import('../components/CredentialHologramScene'));
+// Code-split the 3D Ledger Matrix Scene adapted from 3d-landing-page-main
+const XypherLedgerMatrix3D = lazy(() => import('../components/XypherLedgerMatrix3D'));
 
 // Standard Demo Accounts configured for one-click evaluation
 export const DEMO_ACCOUNTS = {
@@ -59,7 +72,7 @@ export const getDemoPasswordForRole = (roleId) => {
 export const AuthPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, user, role, getDashboardPath } = useAuth();
+  const { signIn, signUp, user, role, getDashboardPath, loginAsDemoRole } = useAuth();
 
   const [isSignUp, setIsSignUp] = useState(location.pathname === '/signup');
   const [email, setEmail] = useState('');
@@ -70,9 +83,13 @@ export const AuthPage = () => {
   const [demoNotice, setDemoNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authState, setAuthState] = useState('idle'); // 'idle' | 'authenticating' | 'verified' | 'error'
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // WebGL 3D capability detection
-  const [canRender3D, setCanRender3D] = useState(false);
+  const [canRender3D, setCanRender3D] = useState(() => shouldUse3DHero());
+
+  // Identity Weaver Synthesis State (Snap animation)
+  const [isSynthesized, setIsSynthesized] = useState(false);
 
   // Extra profile fields for signup
   const [institutionName, setInstitutionName] = useState('');
@@ -88,6 +105,14 @@ export const AuthPage = () => {
   // Check 3D WebGL support
   useEffect(() => {
     setCanRender3D(shouldUse3DHero());
+  }, []);
+
+  // Auto-play the Identity Weaver animation when visitor opens the page
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsSynthesized(true);
+    }, 1200);
+    return () => clearTimeout(timer);
   }, []);
 
   // Only auto-redirect if already authenticated and not currently transitioning
@@ -156,10 +181,32 @@ export const AuthPage = () => {
     }
   };
 
-  const handleDemoPillClick = (roleId) => {
+  const handleDemoPillClick = async (roleId) => {
     setIsSignUp(false);
     handleRoleCardClick(roleId);
     handleScrollToAuth();
+
+    // Instant demo evaluation resolution
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    setAuthState('authenticating');
+    try {
+      if (typeof loginAsDemoRole === 'function') {
+        loginAsDemoRole(roleId);
+      }
+      setAuthState('verified');
+
+      if (prefersReducedMotion) {
+        navigate(getDashboardPath(roleId));
+      } else {
+        await new Promise((r) => setTimeout(r, 650));
+        navigate(getDashboardPath(roleId));
+      }
+    } catch (err) {
+      console.warn('Demo login transition note:', err);
+    }
   };
 
   const handleScrollToAuth = () => {
@@ -167,6 +214,10 @@ export const AuthPage = () => {
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const handleTriggerSynthesis = () => {
+    setIsSynthesized((prev) => !prev);
   };
 
   const handleSubmit = async (e) => {
@@ -226,65 +277,203 @@ export const AuthPage = () => {
     }
   };
 
+  /**
+   * Smooth Anchor Navigation Handler:
+   * Handles smooth-scrolling to any on-page section while maintaining
+   * keyboard accessibility and updating the browser URL hash cleanly.
+   */
+  const handleNavClick = (e, targetId, closeMobile = false) => {
+    e.preventDefault();
+    if (closeMobile) {
+      setMobileNavOpen(false);
+    }
+    if (targetId === 'overview') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', '#overview');
+      }
+      return;
+    }
+    const resolvedId = (targetId === 'sign-in' && typeof window !== 'undefined' && window.innerWidth < 768)
+      ? 'auth-section'
+      : targetId;
+    const target = document.getElementById(resolvedId) || document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', `#${targetId}`);
+      }
+    }
+  };
+
+  // Scroll to hash target or /verify route on initial load or route transition
+  useEffect(() => {
+    if (location.pathname === '/verify') {
+      const el = document.getElementById('verify');
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      }
+    } else if (window.location.hash) {
+      const id = window.location.hash.replace('#', '');
+      const el = document.getElementById(id);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      }
+    }
+  }, [location.pathname, location.hash]);
+
   return (
-    <div className="xy-auth-page-cinematic">
+    <div className="xypher-login-page">
       {/* =========================================================================
-          1. THE HOOK (Above the Fold): 3D Credential Hologram Hero
+          1. HEADER & NAVIGATION: Dark, Opaque, High-Contrast Glassmorphic Nav
           ========================================================================= */}
-      <section className="xy-hero-3d-section" id="hero-3d-hologram">
-        {/* React Three Fiber 3D Canvas or High-Fidelity Fallback */}
-        <div className="xy-hero-3d-canvas-wrap">
+      <header className="xypher-header">
+        <Link className="xypher-brand" to="/" aria-label="XYPHER home">
+          <span className="xypher-brand-mark" aria-hidden="true">
+            <XypherSpinningLogo size={32} />
+          </span>
+          <span className="xypher-brand-copy">
+            <strong>XYPHER</strong>
+            <small>VERIFY. TRUST. AUTHENTICATE.</small>
+          </span>
+        </Link>
+        <nav className="xypher-nav" aria-label="Main navigation">
+          <a href="#overview" onClick={(e) => handleNavClick(e, 'overview')}>Overview</a>
+          <a href="#architecture" onClick={(e) => handleNavClick(e, 'architecture')}>Architecture</a>
+          <a href="#sign-in" onClick={(e) => handleNavClick(e, 'sign-in')}>Sign In</a>
+        </nav>
+        <div className="xypher-header-actions">
+          <a
+            className="xypher-header-cta"
+            href="#sign-in"
+            id="header-portal-cta"
+            onClick={(e) => handleNavClick(e, 'sign-in')}
+          >
+            Access portal <span aria-hidden="true">↗</span>
+          </a>
+          <button
+            type="button"
+            className="xypher-mobile-toggle"
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((prev) => !prev)}
+          >
+            {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Drawer */}
+      {mobileNavOpen && (
+        <div className="xypher-mobile-drawer" role="navigation" aria-label="Mobile Navigation">
+          <a href="#overview" onClick={(e) => handleNavClick(e, 'overview', true)}>Overview</a>
+          <a href="#architecture" onClick={(e) => handleNavClick(e, 'architecture', true)}>Architecture</a>
+          <a
+            href="#sign-in"
+            className="mobile-highlight"
+            onClick={(e) => handleNavClick(e, 'sign-in', true)}
+          >
+            Sign In to Role Portal →
+          </a>
+        </div>
+      )}
+
+      {/* =========================================================================
+          2. THE HERO SECTION: 3D Ledger Matrix Animation from Reference Repository
+          ========================================================================= */}
+      <section className="xypher-hero landing-hero-section" id="overview">
+        {/* Real 3D Interactive Scene adapted from 3d-landing-page-main */}
+        <div className="xypher-hero-3d-bg" id="matrix">
           {canRender3D ? (
-            <Suspense fallback={<HologramFallback />}>
-              <CredentialHologramScene />
+            <Suspense fallback={<XypherLedgerMatrixFallback />}>
+              <XypherLedgerMatrix3D />
             </Suspense>
           ) : (
-            <HologramFallback />
+            <XypherLedgerMatrixFallback />
           )}
         </div>
 
-        {/* Ambient Gradient Vignette */}
-        <div className="xy-hero-3d-vignette" aria-hidden="true" />
+        <div className="xypher-hero-grid" aria-hidden="true" />
+        <div className="xypher-hero-glow" aria-hidden="true" />
 
-        {/* Hero Typography & Interactive Scroll Prompt Layer */}
-        <div className="xy-hero-3d-overlay">
-          <div className="xy-hero-3d-content">
-            <div className="xy-eyebrow">
-              <span className="xy-eyebrow__dot" />
-              <span>CRYPTOGRAPHIC PROTOCOL // 2026</span>
-            </div>
-
-            <h1 className="xy-hero-3d-title">
-              XYPHER <span className="xy-cyan-bright">IDENTITY</span>
-            </h1>
-
-            <p className="xy-hero-3d-tagline">
-              Secure. Verifiable. Immutable.
-            </p>
-
-            <button
-              type="button"
-              onClick={handleScrollToAuth}
-              className="xy-hero-scroll-btn"
-              id="hero-scroll-btn"
-              aria-label="Scroll down to authentication portal"
+        <div className="xypher-hero-copy">
+          <p className="xypher-eyebrow">
+            <span /> DIGITAL CREDENTIAL INFRASTRUCTURE // LIVE LEDGER
+          </p>
+          <h1 className="landing-hero-title">
+            <span className="xy-title-brand">XYPHER —</span>
+            <span className="xy-title-line">Blockchain-Based</span>
+            <span className="xy-title-line">Academic Credential</span>
+            <span className="xy-title-line">Verification with</span>
+            <em className="xy-title-accent">Issuer Accreditation Tracking</em>
+          </h1>
+          <p className="xypher-hero-description">
+            Issue, manage, and cryptographically verify academic qualifications with
+            tamper-evident blockchain anchors, accredited institutional signatures,
+            and zero-trust integrity verification.
+          </p>
+          <div className="xypher-hero-actions">
+            <a
+              className="xypher-primary-cta"
+              id="hero-signin-btn"
+              href="#sign-in"
+              onClick={(e) => handleNavClick(e, 'sign-in')}
             >
-              <span>Enter Verification Portal</span>
-              <div className="xy-scroll-chevron-bounce">
-                <ChevronDown size={20} />
-              </div>
-            </button>
+              Access Role Portal <span aria-hidden="true">↘</span>
+            </a>
+            <a
+              className="xypher-secondary-cta"
+              id="hero-arch-btn"
+              href="#architecture"
+              onClick={(e) => handleNavClick(e, 'architecture')}
+            >
+              Explore Architecture <span aria-hidden="true">↘</span>
+            </a>
+          </div>
+          <div className="xypher-hero-proof">
+            <span className="xypher-proof-dot" />
+            Autonomous Ledger Verification Nodes Synchronized
           </div>
         </div>
+
+        <a
+          className="xypher-scroll-cue"
+          href="#architecture"
+          aria-label="Scroll to architecture"
+          onClick={(e) => handleNavClick(e, 'architecture')}
+        >
+          <span className="xypher-scroll-line" />
+          <span>EXPLORE ARCHITECTURE</span>
+        </a>
+        <div className="xypher-hero-index" aria-hidden="true">01 / OVERVIEW</div>
       </section>
 
       {/* =========================================================================
-          2. THE ACTION (Below the Fold): Glassmorphism Login Experience
+          2.5. SYSTEM ARCHITECTURE & TECHNICAL SECURITY TOPOLOGY
           ========================================================================= */}
-      <section className="xy-auth-section" id="auth-section">
-        <div className="xy-auth-glow-backdrop" aria-hidden="true" />
+      <XypherArchitectureDiagram />
 
-        <div className="xy-container xy-auth-card-container">
+      {/* =========================================================================
+          3. THE ACCESS PORTAL: Glassmorphism Login Interface
+          ========================================================================= */}
+      <section className="xypher-auth-section" id="sign-in">
+        <div className="xypher-auth-container">
+          <div className="xypher-auth-heading">
+          <p className="xypher-eyebrow">
+            <span /> SECURE PORTAL
+          </p>
+          <h2>
+            Your credentials.<br />
+            <em>Your access.</em>
+          </h2>
+          <p>Choose your authorized role and continue to your XYPHER workspace.</p>
+        </div>
+
+        <div className="xypher-auth-card auth-card" id="auth-section">
           <div
             className={`xy-glass-card ${
               authState === 'error' ? 'auth-card-shake' : ''
@@ -316,12 +505,12 @@ export const AuthPage = () => {
                 <span className="xy-auth-brand-name">XYPHER</span>
               </Link>
               <h2 className="xy-auth-title">
-                {isSignUp ? 'Create Platform Identity' : 'Welcome Back'}
+                {isSignUp ? 'Create Platform Identity' : 'Authorized Access Portal'}
               </h2>
               <p className="xy-auth-subtitle">
                 {isSignUp
                   ? 'Register institutional staff or student credentials.'
-                  : 'Select your role or enter credentials to access your dashboard.'}
+                  : 'Select your role or enter credentials to enter the secure environment.'}
               </p>
             </div>
 
@@ -332,7 +521,7 @@ export const AuthPage = () => {
                 <span>Instant Role Demo Evaluation</span>
               </div>
               <p className="xy-demo-quickbox__desc">
-                Select any role below to populate demo credentials for testing:
+                Select any authorized role below to populate credentials:
               </p>
               <div className="xy-demo-pills-row">
                 {rolesList.map((r) => (
@@ -651,7 +840,10 @@ export const AuthPage = () => {
             </div>
           </div>
         </div>
+        </div>
       </section>
+
+      <Footer />
     </div>
   );
 };

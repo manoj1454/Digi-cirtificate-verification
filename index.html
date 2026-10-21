@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XYPHER — Cinematic Foundation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #020617;
+            --accent-cyan: #00f2ff;
+            --accent-gold: #ffd700;
+            --silhouette-color: #0a0a0c;
+            --rim-light: rgba(0, 242, 255, 0.4);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* The Cinematic Stage */
+        .stage {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 70%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Background Ghost Text */
+        .ghost-text {
+            position: absolute;
+            font-size: 25vw;
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.03);
+            text-transform: uppercase;
+            letter-spacing: -0.05em;
+            z-index: 1;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* The Figure Container */
+        .figure-container {
+            position: relative;
+            z-index: 5;
+            width: 600px;
+            height: 800px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+        }
+
+        /* The SVG Silhouette with Rim-Lighting */
+        .silhouette-svg {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 0 15px rgba(0, 242, 255, 0.2));
+        }
+
+        .silhouette-path {
+            fill: var(--silhouette-color);
+            stroke: var(--rim-light);
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* The UI Overlay */
+        .ui-overlay {
+            position: absolute;
+            z-index: 10;
+            text-align: center;
+            width: 100%;
+            pointer-events: none;
+        }
+
+        .brand-title {
+            font-size: 6rem;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            margin-bottom: 0;
+            line-height: 1;
+        }
+
+        .brand-title span {
+            color: var(--accent-cyan);
+            text-shadow: 0 0 30px rgba(0, 242, 255, 0.5);
+        }
+
+        .brand-subtitle {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 1.2rem;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            margin-top: 20px;
+            font-weight: 300;
+        }
+
+        .cta-container {
+            margin-top: 50px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            pointer-events: auto;
+        }
+
+        .btn {
+            padding: 15px 35px;
+            border-radius: 100px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: transparent;
+            border: 2px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-color);
+            box-shadow: 0 0 30px rgba(0, 242, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="stage">
+        <div class="ghost-text">XYPHER</div>
+
+        <div class="figure-container">
+            <!-- Professional SVG Silhouette -->
+            <svg class="silhouette-svg" viewBox="0 0 600 800">
+                <!-- Head -->
+                <ellipse cx="300" cy="200" rx="40" ry="55" class="silhouette-path" />
+                <!-- Neck -->
+                <rect x="290" y="240" width="20" height="40" class="silhouette-path" />
+                <!-- Shoulders and Torso -->
+                <path d="M180 400 C 180 300, 220 280, 300 280 C 380 280, 420 300, 420 400 L 420 800 L 180 800 Z" class="silhouette-path" />
+                <!-- Left Arm -->
+                <path d="M180 400 L 130 550" stroke="var(--rim-light)" stroke-width="30" stroke-linecap="round" />
+                <!-- Right Arm -->
+                <path d="M420 400 L 470 550" stroke="var(--rim-light)" stroke-width="30" stroke-linecap="round" />
+            </svg>
+        </div>
+
+        <div class="ui-overlay">
+            <h1 class="brand-title">XYPHER <span>IDENTITY</span></h1>
+            <p class="brand-subtitle">Unified Cryptographic Attestation</p>
+            
+            <div class="cta-container">
+                <button class="btn btn-primary">Verify Identity</button>
+                <button class="btn btn-secondary">Enter Portal</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

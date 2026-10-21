@@ -31,10 +31,10 @@ export const Footer = () => {
           <div className="xy-footer__col">
             <h4 className="xy-footer__heading">Platform</h4>
             <ul className="xy-footer__links">
-              <li><a href="/#hero" className="xy-footer__link">Overview</a></li>
-              <li><a href="/#how-it-works" className="xy-footer__link">How It Works</a></li>
-              <li><a href="/#features" className="xy-footer__link">Features</a></li>
-              <li><a href="/#verify" className="xy-footer__link">Public Verification</a></li>
+              <li><a href="/#overview" className="xy-footer__link">Overview</a></li>
+              <li><a href="/#architecture" className="xy-footer__link">Architecture</a></li>
+              <li><Link to="/verify" className="xy-footer__link">Public Verification</Link></li>
+              <li><a href="/#sign-in" className="xy-footer__link">Access Portal</a></li>
             </ul>
           </div>
 
