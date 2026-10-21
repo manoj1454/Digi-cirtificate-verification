@@ -128,10 +128,42 @@ function validateBlockchainConfig(env = process.env) {
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
+const isBlockchainExplicitlyRequired =
+  process.env.BLOCKCHAIN_ENABLED === 'true' || process.env.REQUIRE_BLOCKCHAIN === 'true';
 
-// In production, enforce configuration validation on startup
+// Determine operator private key
+const rawKey = process.env.OPERATOR_PRIVATE_KEY;
+const hasSignerKey = Boolean(
+  rawKey &&
+  typeof rawKey === 'string' &&
+  rawKey.trim() !== '' &&
+  !rawKey.includes('YOUR_') &&
+  !rawKey.includes('PLACEHOLDER')
+);
+
+let isBlockchainConfigured = false;
+let isDemoMode = false;
+
 if (isProduction) {
-  validateBlockchainConfig(process.env);
+  if (isBlockchainExplicitlyRequired || hasSignerKey) {
+    // Production with blockchain enabled or key configured: strictly enforce security policies
+    validateBlockchainConfig(process.env);
+    isBlockchainConfigured = true;
+    isDemoMode = false;
+  } else {
+    // Production Demo Mode: No signer configured; allow startup safely without crashing
+    isBlockchainConfigured = false;
+    isDemoMode = true;
+    console.log(
+      '[Blockchain] Demo Mode active: No production blockchain signer configured (OPERATOR_PRIVATE_KEY is unset). ' +
+      'State-changing blockchain transactions are disabled (HTTP 503). ' +
+      'Authentication, Neon database operations, and certificate lookups remain fully functional.'
+    );
+  }
+} else {
+  // Non-production (development, test)
+  isBlockchainConfigured = true;
+  isDemoMode = false;
 }
 
 // Load local deployment artifacts (addresses & ABIs)
@@ -146,13 +178,12 @@ try {
   console.warn('[Blockchain] Warning: Failed to load local.json deployment:', e.message);
 }
 
-// Determine operator private key
-const rawKey = process.env.OPERATOR_PRIVATE_KEY;
 let operatorPrivateKey = null;
 
 if (isProduction) {
   // Production: strictly use validated rawKey; NEVER fallback or silently substitute
-  operatorPrivateKey = rawKey.trim();
+  // In demo mode (isBlockchainConfigured === false), remains null (no Hardhat key or fake key)
+  operatorPrivateKey = isBlockchainConfigured && hasSignerKey ? rawKey.trim() : null;
 } else {
   // Non-production (development, test)
   if (!rawKey || rawKey.trim() === '' || rawKey.includes('YOUR_')) {
@@ -171,7 +202,14 @@ if (isProduction) {
 const rpcUrl = process.env.BLOCKCHAIN_RPC_URL || (isProduction ? '' : 'http://127.0.0.1:8545');
 const isLocalRpc = isLocalhostRpc(rpcUrl);
 
-const provider = rpcUrl ? new ethers.JsonRpcProvider(rpcUrl) : null;
+let provider = null;
+if (rpcUrl && (!isProduction || !isLocalRpc)) {
+  try {
+    provider = new ethers.JsonRpcProvider(rpcUrl);
+  } catch (provErr) {
+    console.warn('[Blockchain] Warning: Failed to initialize JsonRpcProvider:', provErr.message);
+  }
+}
 
 // Initialize signer
 let signer = null;
@@ -205,18 +243,28 @@ const certificateRegistryAddress = isProduction
 const registryAbi = deploymentData?.contracts?.Registry?.abi || [];
 const certificateRegistryAbi = deploymentData?.contracts?.CertificateRegistry?.abi || [];
 
-// Contract instances connected to operator signer
-let registryContract = signer && registryAbi.length > 0 && registryAddress
-  ? new ethers.Contract(registryAddress, registryAbi, signer)
-  : null;
+// Contract instances connected to operator signer or read-only provider
+let registryContract = null;
+if (registryAddress && registryAbi.length > 0) {
+  if (signer) {
+    registryContract = new ethers.Contract(registryAddress, registryAbi, signer);
+  } else if (provider) {
+    registryContract = new ethers.Contract(registryAddress, registryAbi, provider);
+  }
+}
 
-let certificateRegistryContract = signer && certificateRegistryAbi.length > 0 && certificateRegistryAddress
-  ? new ethers.Contract(certificateRegistryAddress, certificateRegistryAbi, signer)
-  : null;
+let certificateRegistryContract = null;
+if (certificateRegistryAddress && certificateRegistryAbi.length > 0) {
+  if (signer) {
+    certificateRegistryContract = new ethers.Contract(certificateRegistryAddress, certificateRegistryAbi, signer);
+  } else if (provider) {
+    certificateRegistryContract = new ethers.Contract(certificateRegistryAddress, certificateRegistryAbi, provider);
+  }
+}
 
 /**
  * Setter to inject mock contract instances during unit/integration tests without touching network.
- * @param {{ registry?: any, certificateRegistry?: any }} instances
+ * @param {{ registry?: any, certificateRegistry?: any, signer?: any, isBlockchainConfigured?: boolean }} instances
  */
 function setContractInstancesForTesting(instances = {}) {
   if (instances.registry !== undefined) {
@@ -225,14 +273,24 @@ function setContractInstancesForTesting(instances = {}) {
   if (instances.certificateRegistry !== undefined) {
     certificateRegistryContract = instances.certificateRegistry;
   }
+  if (instances.signer !== undefined) {
+    signer = instances.signer;
+  }
+  if (instances.isBlockchainConfigured !== undefined) {
+    isBlockchainConfigured = instances.isBlockchainConfigured;
+  }
 }
+
 
 /**
  * Validates blockchain prerequisites before performing state-changing transactions.
  */
 function validateStateChangingOperation() {
   if (!signer) {
-    throw new Error('Blockchain signer is not initialized. Check OPERATOR_PRIVATE_KEY configuration.');
+    const err = new Error('Blockchain signer is not initialized. Check OPERATOR_PRIVATE_KEY configuration.');
+    err.code = 'BLOCKCHAIN_UNAVAILABLE';
+    err.status = 503;
+    throw err;
   }
   if (!registryAddress || !ethers.isAddress(registryAddress) || registryAddress === ethers.ZeroAddress) {
     throw new Error('Invalid or unconfigured Registry contract address.');
@@ -285,7 +343,10 @@ async function isInstitutionAccreditedOnChain(institutionId) {
  */
 async function ensureInstitutionAccredited(institutionId) {
   if (!registryContract) {
-    throw new Error('Registry contract is not initialized or signer missing.');
+    const err = new Error('Registry contract is not initialized or signer missing.');
+    err.code = 'BLOCKCHAIN_UNAVAILABLE';
+    err.status = 503;
+    throw err;
   }
   if (!institutionId || typeof institutionId !== 'string' || institutionId.trim() === '') {
     throw new Error('Invalid institution ID provided for accreditation check.');
@@ -349,7 +410,10 @@ async function issueCertificateOnChain(credentialId, institutionId, ipfsCid) {
  */
 async function verifyCertificateOnChain(credentialId) {
   if (!certificateRegistryContract) {
-    throw new Error('CertificateRegistry contract is not initialized.');
+    const err = new Error('CertificateRegistry contract is not initialized.');
+    err.code = 'BLOCKCHAIN_UNAVAILABLE';
+    err.status = 503;
+    throw err;
   }
   if (!credentialId || typeof credentialId !== 'string' || credentialId.trim() === '') {
     throw new Error('Invalid credential ID for on-chain verification.');
@@ -419,14 +483,12 @@ async function revokeCertificateOnChain(credentialId) {
   const nonce = await getFreshNonce();
   const tx = await certificateRegistryContract.revokeCertificate(credentialId.trim(), { nonce });
   const receipt = await tx.wait();
+
   return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
 }
 
 module.exports = {
-  provider,
-  signer,
-  registryContract,
-  certificateRegistryContract,
+
   registryAddress,
   certificateRegistryAddress,
   DEFAULT_HARDHAT_KEY,
@@ -443,5 +505,48 @@ module.exports = {
   issueCertificateOnChain,
   verifyCertificateOnChain,
   revokeCertificateOnChain,
+  isBlockchainReady: () => Boolean(isBlockchainConfigured && signer),
+  rpcUrl,
 };
+
+Object.defineProperties(module.exports, {
+  signer: {
+    get: () => signer,
+    set: (val) => { signer = val; },
+    enumerable: true,
+    configurable: true,
+  },
+  registryContract: {
+    get: () => registryContract,
+    set: (val) => { registryContract = val; },
+    enumerable: true,
+    configurable: true,
+  },
+  certificateRegistryContract: {
+    get: () => certificateRegistryContract,
+    set: (val) => { certificateRegistryContract = val; },
+    enumerable: true,
+    configurable: true,
+  },
+  isBlockchainConfigured: {
+    get: () => isBlockchainConfigured,
+    set: (val) => { isBlockchainConfigured = val; },
+    enumerable: true,
+    configurable: true,
+  },
+  isDemoMode: {
+    get: () => isDemoMode,
+    set: (val) => { isDemoMode = val; },
+    enumerable: true,
+    configurable: true,
+  },
+  provider: {
+    get: () => provider,
+    set: (val) => { provider = val; },
+    enumerable: true,
+    configurable: true,
+  },
+});
+
+
 

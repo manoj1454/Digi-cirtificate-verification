@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { supabase, isConfigured: isSupabaseConfigured } = require('../config/supabase');
+const blockchain = require('../config/blockchain');
 
 router.get('/', async (req, res) => {
   const startTime = Date.now();
@@ -62,6 +63,14 @@ router.get('/', async (req, res) => {
       message: dbHealth.message,
     },
     auth: authHealth,
+    blockchain: {
+      configured: blockchain.isBlockchainConfigured,
+      mode: blockchain.isDemoMode ? 'demo' : process.env.NODE_ENV === 'production' ? 'production' : 'development',
+      signerConfigured: Boolean(blockchain.signer),
+      message: blockchain.isBlockchainConfigured
+        ? 'Blockchain service configured and operational.'
+        : 'Demo mode: Blockchain signer not configured. State-changing operations disabled (HTTP 503).',
+    },
   };
 
   return res.status(httpStatus).json(responsePayload);

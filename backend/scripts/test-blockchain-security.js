@@ -690,8 +690,128 @@ async function runSecurityAuditTests() {
     report('TEST J Failed unexpectedly', false, err.message);
   }
 
+  // ---------------------------------------------------------------------------
+  // TEST K: Production Demo Mode & Blockchain Unavailability Guards
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST K: Production Demo Mode & Blockchain Unavailability Guards ---');
+  try {
+    // K1. Valid production configuration passes validation
+    const validConfigRes = validateBlockchainConfig({
+      NODE_ENV: 'production',
+      BLOCKCHAIN_ENABLED: 'true',
+      OPERATOR_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
+      BLOCKCHAIN_RPC_URL: 'https://rpc-amoy.polygon.technology',
+      REGISTRY_CONTRACT_ADDRESS: '0x1111111111111111111111111111111111111111',
+      CERTIFICATE_REGISTRY_CONTRACT_ADDRESS: '0x2222222222222222222222222222222222222222',
+    });
+    report('K1. Valid production configuration passes strict validation', validConfigRes === true);
+
+    // K2. Production startup strictly rejects missing key when BLOCKCHAIN_ENABLED=true
+    let threwExplicitMissing = false;
+    try {
+      validateBlockchainConfig({
+        NODE_ENV: 'production',
+        BLOCKCHAIN_ENABLED: 'true',
+        BLOCKCHAIN_RPC_URL: 'https://rpc-amoy.polygon.technology',
+        REGISTRY_CONTRACT_ADDRESS: '0x1111111111111111111111111111111111111111',
+        CERTIFICATE_REGISTRY_CONTRACT_ADDRESS: '0x2222222222222222222222222222222222222222',
+      });
+    } catch (err) {
+      threwExplicitMissing = err.message.includes('OPERATOR_PRIVATE_KEY is missing or empty');
+    }
+    report('K2. Production strictly rejects startup when BLOCKCHAIN_ENABLED=true and key is missing', threwExplicitMissing);
+
+    // K3. Production startup without OPERATOR_PRIVATE_KEY enters Demo Mode safely without throwing
+    const { execSync } = require('child_process');
+    const startupOutput = execSync(
+      'NODE_ENV=production OPERATOR_PRIVATE_KEY="" node -e "const bc = require(\'./src/config/blockchain\'); console.log(\'DEMO_MODE:\' + bc.isDemoMode + \':CONFIGURED:\' + bc.isBlockchainConfigured + \':SIGNER:\' + (bc.signer === null));"',
+      { cwd: path.resolve(__dirname, '..'), encoding: 'utf-8' }
+    );
+    report(
+      'K3. Production startup without OPERATOR_PRIVATE_KEY starts in Demo Mode without throwing',
+      startupOutput.includes('DEMO_MODE:true:CONFIGURED:false:SIGNER:true')
+    );
+
+    // K4-K6: Test API endpoints when signer/blockchain is unavailable (Demo Mode simulation)
+    const originalSigner = blockchain.signer;
+    const originalCertReg = blockchain.certificateRegistryContract;
+    const originalReg = blockchain.registryContract;
+    const originalConfigured = blockchain.isBlockchainConfigured;
+
+    setContractInstancesForTesting({
+      signer: null,
+      certificateRegistry: null,
+      registry: null,
+      isBlockchainConfigured: false,
+    });
+
+    // K4. Attempted certificate approval without signer returns 503
+    const approveNoSignerRes = await fetch(`${baseUrl}/api/certificates/dummy-cert-id/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': crypto.randomUUID(),
+        'x-user-role': 'institution',
+      },
+    });
+    const approveNoSignerData = await approveNoSignerRes.json();
+    report(
+      'K4. Certificate approval without signer returns 503 Service Unavailable',
+      approveNoSignerRes.status === 503 && approveNoSignerData.code === 'BLOCKCHAIN_UNAVAILABLE'
+    );
+
+    // K5. Attempted certificate revocation without signer returns 503
+    const revokeNoSignerRes = await fetch(`${baseUrl}/api/certificates/dummy-cert-id/revoke`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': crypto.randomUUID(),
+        'x-user-role': 'regulator',
+      },
+    });
+    const revokeNoSignerData = await revokeNoSignerRes.json();
+    report(
+      'K5. Certificate revocation without signer returns 503 Service Unavailable',
+      revokeNoSignerRes.status === 503 && revokeNoSignerData.code === 'BLOCKCHAIN_UNAVAILABLE'
+    );
+
+    // K6. Attempted institution registration without signer returns 503
+    const instApproveNoSignerRes = await fetch(`${baseUrl}/api/institutions/dummy-inst-id/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': crypto.randomUUID(),
+        'x-user-role': 'regulator',
+      },
+    });
+    const instApproveNoSignerData = await instApproveNoSignerRes.json();
+    report(
+      'K6. Institution on-chain registration without signer returns 503 Service Unavailable',
+      instApproveNoSignerRes.status === 503 && instApproveNoSignerData.code === 'BLOCKCHAIN_UNAVAILABLE'
+    );
+
+    // K7. Health check returns 200 and transparently reports demo mode
+    const healthRes = await fetch(`${baseUrl}/api/health`);
+    const healthData = await healthRes.json();
+    report(
+      'K7. Health check reports 200 OK with transparent blockchain demo mode indicator',
+      healthRes.status === 200 && healthData.blockchain !== undefined
+    );
+
+    // Restore original instances
+    setContractInstancesForTesting({
+      signer: originalSigner,
+      certificateRegistry: originalCertReg,
+      registry: originalReg,
+      isBlockchainConfigured: originalConfigured,
+    });
+  } catch (err) {
+    report('TEST K Failed unexpectedly', false, err.message);
+  }
+
   // Clean shutdown
   server.close();
+
 
   console.log('\n========================================================================');
   console.log(`  SECURITY AUDIT RESULTS: ${passedTests} / ${totalTests} TESTS PASSED`);

@@ -2,12 +2,13 @@ const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const db = require('../config/database');
 const { supabase } = require('../config/supabase');
+const blockchain = require('../config/blockchain');
 const {
   addInstitutionOnChain,
   updateAccreditationStatusOnChain,
   isInstitutionAccreditedOnChain,
   verifyCertificateOnChain,
-} = require('../config/blockchain');
+} = blockchain;
 const { getGatewayUrl } = require('../config/pinata');
 const { getAnomalyFlags } = require('../services/anomalyService');
 
@@ -101,6 +102,15 @@ router.get('/my-institution', requireAuth, async (req, res) => {
 router.post('/:id/approve', requireAuth, requireRole('regulator'), async (req, res) => {
   const { id } = req.params;
 
+  // Check if blockchain signer is configured
+  if (!blockchain.signer && !blockchain.registryContract) {
+    return res.status(503).json({
+      success: false,
+      error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Institution on-chain registration is disabled in demo mode.',
+      code: 'BLOCKCHAIN_UNAVAILABLE',
+    });
+  }
+
   try {
     if (!db.isConfigured) {
       return res.status(500).json({ error: 'DATABASE_URL is not configured.' });
@@ -117,6 +127,19 @@ router.post('/:id/approve', requireAuth, requireRole('regulator'), async (req, r
     try {
       chainResult = await addInstitutionOnChain(inst.id, inst.name);
     } catch (chainErr) {
+
+      if (
+        chainErr.code === 'BLOCKCHAIN_UNAVAILABLE' ||
+        chainErr.status === 503 ||
+        chainErr.message?.includes('signer is not initialized')
+      ) {
+        return res.status(503).json({
+          success: false,
+          error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Institution on-chain registration is disabled in demo mode.',
+          code: 'BLOCKCHAIN_UNAVAILABLE',
+          details: chainErr.message,
+        });
+      }
       if (!chainErr.message?.includes('already exists')) {
         console.error('On-chain institution addition error:', chainErr);
         return res.status(500).json({
@@ -196,6 +219,14 @@ router.post('/:id/accreditation', requireAuth, requireRole('regulator'), async (
     return res.status(400).json({ error: 'accredited (boolean) is required in request body.' });
   }
 
+  if (!blockchain.signer && !blockchain.registryContract) {
+    return res.status(503).json({
+      success: false,
+      error: 'Blockchain service unavailable: No blockchain signer is configured on this server. On-chain accreditation updates are disabled in demo mode.',
+      code: 'BLOCKCHAIN_UNAVAILABLE',
+    });
+  }
+
   try {
     const tx = await updateAccreditationStatusOnChain(id, accredited);
     return res.status(200).json({
@@ -205,6 +236,18 @@ router.post('/:id/accreditation', requireAuth, requireRole('regulator'), async (
       txHash: tx.txHash,
     });
   } catch (err) {
+    if (
+      err.code === 'BLOCKCHAIN_UNAVAILABLE' ||
+      err.status === 503 ||
+      err.message?.includes('signer is not initialized')
+    ) {
+      return res.status(503).json({
+        success: false,
+        error: 'Blockchain service unavailable: No blockchain signer is configured on this server. On-chain accreditation updates are disabled in demo mode.',
+        code: 'BLOCKCHAIN_UNAVAILABLE',
+        details: err.message,
+      });
+    }
     console.error('Error updating accreditation status:', err);
     return res.status(500).json({
       error: 'Failed to update accreditation status on-chain',

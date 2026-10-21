@@ -4,11 +4,12 @@ const multer = require('multer');
 const { pinata, getGatewayUrl, computeSha256 } = require('../config/pinata');
 const { requireAuth } = require('../middleware/auth');
 const db = require('../config/database');
+const blockchain = require('../config/blockchain');
 const {
   issueCertificateOnChain,
   verifyCertificateOnChain,
   revokeCertificateOnChain,
-} = require('../config/blockchain');
+} = blockchain;
 const {
   createPendingCertificate,
   getPendingCertificate,
@@ -236,6 +237,16 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
   const { id } = req.params;
   const approvedBy = req.user.id;
 
+  // Check if blockchain signer is configured before state mutation
+  if (!blockchain.signer && !blockchain.certificateRegistryContract) {
+    return res.status(503).json({
+      success: false,
+      error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Certificate issuance is disabled in demo mode.',
+      status: 'unavailable',
+      code: 'BLOCKCHAIN_UNAVAILABLE',
+    });
+  }
+
   try {
     const pendingCert = await getPendingCertificate(id);
     if (!pendingCert) {
@@ -261,6 +272,7 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
       status: 'approved',
       approved_by: approvedBy,
     });
+
 
     // Call issueCertificate on-chain
     try {
@@ -302,6 +314,28 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
     } catch (chainErr) {
       console.error('On-chain transaction failed:', chainErr.message);
 
+      const isUnavailable =
+        chainErr.code === 'BLOCKCHAIN_UNAVAILABLE' ||
+        chainErr.status === 503 ||
+        chainErr.message?.includes('Blockchain signer is not initialized') ||
+        chainErr.message?.includes('Registry contract is not initialized');
+
+      if (isUnavailable) {
+        // Roll back pending status so certificate is not marked failed
+        await updatePendingCertificate(pendingCert.id, {
+          status: 'pending',
+          approved_by: null,
+        });
+
+        return res.status(503).json({
+          success: false,
+          error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Certificate issuance is disabled in demo mode.',
+          status: 'unavailable',
+          code: 'BLOCKCHAIN_UNAVAILABLE',
+          details: chainErr.message,
+        });
+      }
+
       await updatePendingCertificate(pendingCert.id, {
         status: 'failed',
         error_reason: chainErr.message,
@@ -316,6 +350,7 @@ router.post('/:id/approve', requireAuth, async (req, res) => {
         details: chainErr.message,
       });
     }
+
   } catch (error) {
     console.error('Error approving certificate:', error);
     return res.status(500).json({
@@ -334,77 +369,128 @@ router.get('/verify/:credentialId', verifyLimiter, async (req, res) => {
   const { credentialId } = req.params;
 
   try {
-    const chainData = await verifyCertificateOnChain(credentialId);
-    const gatewayUrl = getGatewayUrl(chainData.ipfsHash);
+    let chainData = null;
 
-    // Look up certificate metadata from Neon PostgreSQL
-    let degreeName = null;
-    let issueDate = null;
-    let studentName = null;
-    let institutionName = null;
-
-    if (db.isConfigured) {
+    if (blockchain.certificateRegistryContract) {
       try {
-        const queryText = `
-          SELECT c.degree_name, c.issue_date, s.full_name AS student_name, i.name AS institution_name
-          FROM certificates c
-          LEFT JOIN students s ON c.student_id = s.id
-          LEFT JOIN institutions i ON c.institution_id = i.id
-          WHERE c.credential_id = $1
-          LIMIT 1
-        `;
-        const result = await db.query(queryText, [credentialId]);
-        if (result.rows.length > 0) {
-          const row = result.rows[0];
-          degreeName = row.degree_name || null;
-          issueDate = row.issue_date || null;
-          studentName = row.student_name || null;
-          institutionName = row.institution_name || null;
+        chainData = await verifyCertificateOnChain(credentialId);
+      } catch (error) {
+        const errorMsg = error.message || '';
+        if (errorMsg.includes('Certificate does not exist')) {
+          return res.status(404).json({
+            success: false,
+            error: 'Certificate not found on-chain.',
+            credentialId,
+          });
         }
-
-        // Fallback: if institutionName not found in join, look up by chainData.institutionId
-        if (!institutionName && chainData.institutionId) {
-          const instRes = await db.query(
-            'SELECT name FROM institutions WHERE id::text = $1 LIMIT 1',
-            [chainData.institutionId]
-          );
-          if (instRes.rows.length > 0) {
-            institutionName = instRes.rows[0].name;
-          }
-        }
-      } catch (dbErr) {
-        console.warn('Warning: Could not fetch certificate metadata from Neon:', dbErr.message);
+        // If contract call failed due to network / uninitialized, fall back to DB lookup
+        console.warn('On-chain verification query failed, attempting database fallback:', errorMsg);
       }
     }
 
-    return res.status(200).json({
-      success: true,
-      credentialId,
-      ipfsHash: chainData.ipfsHash,
-      gatewayUrl,
-      revoked: chainData.revoked,
-      institutionId: chainData.institutionId,
-      isInstituteAccredited: chainData.isInstituteAccredited,
-      isValid: !chainData.revoked && chainData.isInstituteAccredited,
-      degreeName,
-      issueDate,
-      studentName,
-      institutionName,
-    });
-  } catch (error) {
-    const errorMsg = error.message || '';
-    if (errorMsg.includes('Certificate does not exist')) {
-      return res.status(404).json({
-        success: false,
-        error: 'Certificate not found on-chain.',
+    if (chainData) {
+      const gatewayUrl = getGatewayUrl(chainData.ipfsHash);
+
+      // Look up certificate metadata from Neon PostgreSQL
+      let degreeName = null;
+      let issueDate = null;
+      let studentName = null;
+      let institutionName = null;
+
+      if (db.isConfigured) {
+        try {
+          const queryText = `
+            SELECT c.degree_name, c.issue_date, s.full_name AS student_name, i.name AS institution_name
+            FROM certificates c
+            LEFT JOIN students s ON c.student_id = s.id
+            LEFT JOIN institutions i ON c.institution_id = i.id
+            WHERE c.credential_id = $1
+            LIMIT 1
+          `;
+          const result = await db.query(queryText, [credentialId]);
+          if (result.rows.length > 0) {
+            const row = result.rows[0];
+            degreeName = row.degree_name || null;
+            issueDate = row.issue_date || null;
+            studentName = row.student_name || null;
+            institutionName = row.institution_name || null;
+          }
+
+          // Fallback: if institutionName not found in join, look up by chainData.institutionId
+          if (!institutionName && chainData.institutionId) {
+            const instRes = await db.query(
+              'SELECT name FROM institutions WHERE id::text = $1 LIMIT 1',
+              [chainData.institutionId]
+            );
+            if (instRes.rows.length > 0) {
+              institutionName = instRes.rows[0].name;
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Warning: Could not fetch certificate metadata from Neon:', dbErr.message);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
         credentialId,
+        ipfsHash: chainData.ipfsHash,
+        gatewayUrl,
+        revoked: chainData.revoked,
+        institutionId: chainData.institutionId,
+        isInstituteAccredited: chainData.isInstituteAccredited,
+        isValid: !chainData.revoked && chainData.isInstituteAccredited,
+        degreeName,
+        issueDate,
+        studentName,
+        institutionName,
+        blockchainVerified: true,
       });
     }
 
-    console.error('Error verifying certificate on-chain:', error);
+    // Fallback: Database lookup when on-chain contract is not initialized (e.g. demo mode on Render)
+    if (db.isConfigured) {
+      const queryText = `
+        SELECT c.*, s.full_name AS student_name, i.name AS institution_name
+        FROM certificates c
+        LEFT JOIN students s ON c.student_id = s.id
+        LEFT JOIN institutions i ON c.institution_id = i.id
+        WHERE c.credential_id = $1
+        LIMIT 1
+      `;
+      const result = await db.query(queryText, [credentialId]);
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        const gatewayUrl = getGatewayUrl(row.ipfs_cid);
+        return res.status(200).json({
+          success: true,
+          credentialId,
+          ipfsHash: row.ipfs_cid,
+          gatewayUrl,
+          revoked: Boolean(row.revoked),
+          institutionId: row.institution_id,
+          isInstituteAccredited: true,
+          isValid: !row.revoked,
+          degreeName: row.degree_name,
+          issueDate: row.issue_date,
+          studentName: row.student_name,
+          institutionName: row.institution_name,
+          blockchainVerified: false,
+          source: 'database',
+        });
+      }
+    }
+
+    return res.status(404).json({
+      success: false,
+      error: 'Certificate not found.',
+      credentialId,
+    });
+  } catch (error) {
+    console.error('Error verifying certificate:', error);
     return res.status(500).json({
       success: false,
-      error: 'Failed to verify certificate on-chain',
+      error: 'Failed to verify certificate',
       details: error.message,
     });
   }
@@ -503,6 +589,15 @@ router.get('/verify-logs', async (req, res) => {
 router.post('/:id/revoke', requireAuth, async (req, res) => {
   const { id } = req.params;
 
+  // Check if blockchain signer is configured
+  if (!blockchain.signer && !blockchain.certificateRegistryContract) {
+    return res.status(503).json({
+      success: false,
+      error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Certificate revocation is disabled in demo mode.',
+      code: 'BLOCKCHAIN_UNAVAILABLE',
+    });
+  }
+
   try {
     if (!db.isConfigured) {
       return res.status(500).json({ error: 'DATABASE_URL is not configured.' });
@@ -537,7 +632,25 @@ router.post('/:id/revoke', requireAuth, async (req, res) => {
     }
 
     // Revoke on-chain
-    const txResult = await revokeCertificateOnChain(cert.credential_id);
+    let txResult;
+
+    try {
+      txResult = await revokeCertificateOnChain(cert.credential_id);
+    } catch (chainErr) {
+      if (
+        chainErr.code === 'BLOCKCHAIN_UNAVAILABLE' ||
+        chainErr.status === 503 ||
+        chainErr.message?.includes('signer is not initialized')
+      ) {
+        return res.status(503).json({
+          success: false,
+          error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Certificate revocation is disabled in demo mode.',
+          code: 'BLOCKCHAIN_UNAVAILABLE',
+          details: chainErr.message,
+        });
+      }
+      throw chainErr;
+    }
 
     // Update Neon PostgreSQL
     const updateRes = await db.query(
@@ -552,6 +665,17 @@ router.post('/:id/revoke', requireAuth, async (req, res) => {
       certificate: updateRes.rows[0],
     });
   } catch (err) {
+    if (
+      err.code === 'BLOCKCHAIN_UNAVAILABLE' ||
+      err.status === 503 ||
+      err.message?.includes('signer is not initialized')
+    ) {
+      return res.status(503).json({
+        success: false,
+        error: 'Blockchain service unavailable: No blockchain signer is configured on this server. Certificate revocation is disabled in demo mode.',
+        code: 'BLOCKCHAIN_UNAVAILABLE',
+      });
+    }
     console.error('Error revoking certificate:', err);
     return res.status(500).json({
       error: 'Failed to revoke certificate',

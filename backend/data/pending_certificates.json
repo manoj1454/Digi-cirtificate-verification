@@ -398,5 +398,37 @@
     "on_chain_tx_hash": null,
     "error_reason": null,
     "created_at": "2026-10-19T14:04:17.846Z"
+  },
+  {
+    "id": "4828e311-2d8e-45bb-8e5d-c72b22ea14bc",
+    "institution_id": "inst-001",
+    "student_id": "student-001",
+    "credential_id": "CRED-UNIT-494079",
+    "ipfs_cid": "bafkreiexamplecid123",
+    "sha256_hash": "0x1234567890abcdef",
+    "degree_name": "B.S. Artificial Intelligence",
+    "issue_date": "2026-10-21",
+    "created_by": "staff-initiator-001",
+    "approved_by": null,
+    "status": "pending_approval",
+    "on_chain_tx_hash": null,
+    "error_reason": null,
+    "created_at": "2026-10-21T16:01:35.918Z"
+  },
+  {
+    "id": "9bcc0345-5b2b-4088-8d73-cf0d01016917",
+    "institution_id": "inst-AAA-uuid",
+    "student_id": "stud-0001-uuid",
+    "credential_id": "CRED-TEST-MS-533929",
+    "ipfs_cid": "bafkreimockcid123",
+    "sha256_hash": "0xmockhash123",
+    "degree_name": "B.S. Cybersecurity",
+    "issue_date": "2026-10-21",
+    "created_by": "staff-member-1",
+    "approved_by": null,
+    "status": "pending_approval",
+    "on_chain_tx_hash": null,
+    "error_reason": null,
+    "created_at": "2026-10-21T16:02:14.182Z"
   }
 ]
